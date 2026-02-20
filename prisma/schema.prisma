@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String?
+  department    String?
+  role          String   // INITIATOR, BUM, FBP, CLUSTER_HEAD, LEGAL_GM, LEGAL_OFFICER, SPECIAL_APPROVER, FINANCE_TEAM, ADMIN
+  isActive      Boolean  @default(true)
+  password      String?
+  formIds       String?  // JSON array of form IDs e.g. "[1,2,3]"
+  accounts      Account[]
+  sessions      Session[]
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("users")
+}
+
+model CompanyCode {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  name        String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("company_codes")
+}
+
+model SapCostCenter {
+  id            String   @id @default(cuid())
+  companyCode   String
+  costCenter    String
+  description   String
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  @@map("sap_cost_centers")
+}
+
+model ContractTitle {
+  id          String   @id @default(cuid())
+  title       String
+  sortOrder   Int
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("contract_titles")
+}
+model Submission {
+  id                   String   @id @default(cuid())
+  submissionNo         String   @unique
+  formId               Int
+  formName             String
+  status               String   // DRAFT, PENDING_APPROVAL, PENDING_LEGAL_GM, PENDING_LEGAL_OFFICER, PENDING_LEGAL_GM_FINAL, PENDING_SPECIAL_APPROVER, COMPLETED, CANCELLED, SENT_BACK
+  companyCode          String
+  title                String
+  sapCostCenter        String
+  scopeOfAgreement     String
+  term                 String
+  value                String
+  remarks              String?
+  initiatorComments    String?
+  initiatorId          String
+  assignedLegalOfficer String?
+  loStage              String?  // PENDING_GM, REASSIGNED, ACTIVE, POST_GM_APPROVAL
+  legalGmStage         String?  // INITIAL_REVIEW, FINAL_APPROVAL
+  dueDate              DateTime?
+  parentId             String?
+  isResubmission       Boolean  @default(false)
+  bumId                String?
+  fbpId                String?
+  clusterHeadId        String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  parties              SubmissionParty[]
+  approvals            SubmissionApproval[]
+  documents            SubmissionDocument[]
+  comments             SubmissionComment[]
+  specialApprovers     SubmissionSpecialApprover[]
+  @@map("submissions")
+}
+
+model SubmissionParty {
+  id           String     @id @default(cuid())
+  submissionId String
+  type         String
+  name         String
+  submission   Submission @relation(fields: [submissionId], references: [id])
+  @@map("submission_parties")
+}
+
+model SubmissionApproval {
+  id           String     @id @default(cuid())
+  submissionId String
+  role         String     // BUM, FBP, CLUSTER_HEAD
+  approverName String
+  approverEmail String
+  status       String     // PENDING, APPROVED, SENT_BACK, CANCELLED
+  comment      String?
+  actionDate   DateTime?
+  createdAt    DateTime   @default(now())
+  submission   Submission @relation(fields: [submissionId], references: [id])
+  @@map("submission_approvals")
+}
+
+model SubmissionDocument {
+  id           String     @id @default(cuid())
+  submissionId String
+  label        String
+  type         String
+  status       String     @default("NONE") // NONE, OK, ATTENTION, RESUBMIT
+  fileUrl      String?
+  comment      String?
+  uploadedAt   DateTime?
+  submission   Submission @relation(fields: [submissionId], references: [id])
+  @@map("submission_documents")
+}
+
+model SubmissionComment {
+  id           String     @id @default(cuid())
+  submissionId String
+  authorName   String
+  authorRole   String
+  text         String
+  createdAt    DateTime   @default(now())
+  submission   Submission @relation(fields: [submissionId], references: [id])
+  @@map("submission_comments")
+}
+
+model SubmissionSpecialApprover {
+  id           String     @id @default(cuid())
+  submissionId String
+  department   String
+  approverName String
+  approverEmail String
+  assignedBy   String     // LEGAL_GM, LEGAL_OFFICER
+  status       String     @default("PENDING") // PENDING, APPROVED, CANCELLED
+  comment      String?
+  actionDate   DateTime?
+  createdAt    DateTime   @default(now())
+  submission   Submission @relation(fields: [submissionId], references: [id])
+  @@map("submission_special_approvers")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+model FormConfig {
+  id           String   @id @default(cuid())
+  formId       Int      @unique
+  formName     String
+  instructions String   @default("")
+  docs         FormConfigDoc[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@map("form_configs")
+}
+
+model FormConfigDoc {
+  id           String     @id @default(cuid())
+  formConfigId String
+  label        String
+  type         String
+  sortOrder    Int        @default(0)
+  formConfig   FormConfig @relation(fields: [formConfigId], references: [id], onDelete: Cascade)
+  @@map("form_config_docs")
+}
+
