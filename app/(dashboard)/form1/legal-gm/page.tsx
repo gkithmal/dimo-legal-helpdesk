@@ -579,7 +579,7 @@ function LegalGMPageContent() {
   };
 
   // ── Derived ──
-  const stage: LegalGMStage = (submission?.legalGmStage as LegalGMStage) || 'INITIAL_REVIEW';
+  const stage: LegalGMStage = (submission?.status === 'PENDING_LEGAL_GM_FINAL' || submission?.legalGmStage === 'FINAL_APPROVAL') ? 'FINAL_APPROVAL' : 'INITIAL_REVIEW';
   const isInitial = stage === 'INITIAL_REVIEW';
   const activeStep = isInitial ? 2 : 4;
   const steps = isInitial ? WORKFLOW_STEPS_INITIAL : WORKFLOW_STEPS_FINAL;
@@ -937,7 +937,7 @@ function LegalGMPageContent() {
         />
       )}
 
-      {showSuccess === 'approve' && <SuccessModal title="Approved!" message="Contract review form has been approved." submissionNo={submission.submissionNo} onClose={() => { setShowSuccess(null); router.push(ROUTES.LEGAL_GM_HOME); }} />}
+      {showSuccess === 'approve' && <SuccessModal title={stage === 'FINAL_APPROVAL' ? 'Completed!' : 'Approved!'} message={stage === 'FINAL_APPROVAL' ? 'The contract has been fully approved and completed.' : 'Request has been sent to the Legal Officer.'} submissionNo={submission.submissionNo} onClose={() => { setShowSuccess(null); router.push(ROUTES.LEGAL_GM_HOME); }} />}
       {showSuccess === 'sendback' && <SuccessModal title="Sent Back!" message="Contract review form has been sent back." submissionNo={submission.submissionNo} onClose={() => { setShowSuccess(null); router.push(ROUTES.LEGAL_GM_HOME); }} />}
       {showSuccess === 'cancel'   && <SuccessModal title="Rejected!" message="Contract review form has been rejected and cancelled." submissionNo={submission.submissionNo} onClose={() => { setShowSuccess(null); router.push(ROUTES.LEGAL_GM_HOME); }} />}
     </div>

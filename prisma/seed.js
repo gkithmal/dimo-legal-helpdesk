@@ -1,22 +1,25 @@
 const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
+const { Pool } = require('pg');
 const { createHash } = require('crypto');
 require('dotenv').config();
 
-const prisma = new PrismaClient({
-  datasourceUrl: process.env.DATABASE_URL,
-});
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 function hashPassword(password) {
   return createHash('sha256').update(password).digest('hex');
 }
 
 const users = [
-  { email: 'oliva.perera@testdimo.com',    name: 'Oliva Perera',           role: 'INITIATOR',    department: 'Operations' },
-  { email: 'grace.perera@testdimo.com',    name: 'Grace Perera',           role: 'BUM',           department: 'Business Unit' },
-  { email: 'madurika.sama@testdimo.com',   name: 'Madurika Samarasekera',  role: 'FBP',           department: 'Finance' },
-  { email: 'mangala.wick@testdimo.com',    name: 'Mangala Wickramasinghe', role: 'CLUSTER_HEAD',  department: 'Cluster' },
-  { email: 'sandalie.gomes@testdimo.com',  name: 'Sandalie Gomes',         role: 'LEGAL_OFFICER', department: 'Legal' },
-  { email: 'dinali.guru@testdimo.com',     name: 'Dinali Gurusinghe',      role: 'LEGAL_GM',      department: 'Legal' },
+  { email: 'oliva.perera@testdimo.com',     name: 'Oliva Perera',           role: 'INITIATOR',        department: 'Operations' },
+  { email: 'grace.perera@testdimo.com',     name: 'Grace Perera',           role: 'BUM',              department: 'Business Unit' },
+  { email: 'madurika.sama@testdimo.com',    name: 'Madurika Samarasekera',  role: 'FBP',              department: 'Finance' },
+  { email: 'mangala.wick@testdimo.com',     name: 'Mangala Wickramasinghe', role: 'CLUSTER_HEAD',     department: 'Cluster' },
+  { email: 'sandalie.gomes@testdimo.com',   name: 'Sandalie Gomes',         role: 'LEGAL_OFFICER',    department: 'Legal' },
+  { email: 'dinali.guru@testdimo.com',      name: 'Dinali Gurusinghe',      role: 'LEGAL_GM',         department: 'Legal' },
+  { email: 'special.approver@testdimo.com', name: 'Special Approver',       role: 'SPECIAL_APPROVER', department: 'Legal' },
 ];
 
 async function main() {
@@ -26,7 +29,7 @@ async function main() {
       update: { password: hashPassword('Test@1234'), name: u.name, role: u.role, department: u.department },
       create: { ...u, password: hashPassword('Test@1234') },
     });
-    console.log('✓ ' + u.role.padEnd(15) + ' ' + u.email);
+    console.log('✓ ' + u.role.padEnd(18) + ' ' + u.email);
   }
   console.log('\nAll users seeded. Password for all: Test@1234');
 }
