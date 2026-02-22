@@ -124,7 +124,7 @@ const REQUIRED_DOCS: Record<string, string[]> = {
   ],
 };
 
-// Common documents always required regardless of party type
+// Company-specific docs (Form 15/13/20 — only for Company party type)
 const COMMON_DOCS = [
   'Form 15 (latest form)',
   'Form 13 (latest form if applicable)',
@@ -814,7 +814,7 @@ function Form1PageContent() {
         if (!requiredDocs.find((d) => d.key === key)) requiredDocs.push({ label: doc, key });
       });
     });
-    if (requiredDocs.length > 0) {
+    if (selectedTypes.includes('Company')) {
       COMMON_DOCS.forEach((doc) => {
         if (!requiredDocs.find((d) => d.key === doc)) requiredDocs.push({ label: doc, key: doc });
       });
@@ -1262,6 +1262,12 @@ function Form1PageContent() {
                       <span className="text-[9px] uppercase font-bold text-[#4686B7] bg-[#1A438A]/10 px-1.5 py-0.5 rounded">
                         {d.type === 'LO_PREPARED_FINAL' ? 'Final' : 'Initial'}
                       </span>
+                      {d.fileUrl && (
+                        <button onClick={() => window.open(d.fileUrl, '_blank')}
+                          className="w-6 h-6 rounded flex items-center justify-center text-[#1A438A] hover:bg-[#1A438A]/10 transition-colors" title="View document">
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ));
                 })()}

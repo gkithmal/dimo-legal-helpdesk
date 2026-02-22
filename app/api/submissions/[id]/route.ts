@@ -30,7 +30,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { status, loStage, legalGmStage, assignedLegalOfficer, documentId, fileUrl, documentStatus,
       ouLegalReviewCompleted, ouRegisteredDate, ouLegalRefNumber, ouDateOfExecution, ouDateOfExpiration,
       ouDirectorsExecuted1, ouDirectorsExecuted2, ouConsideration, ouReviewedBy, ouRegisteredBy,
-      ouSignedSupplierCode, ouRemarks, ouSavedAt } = body;
+      ouSignedSupplierCode, ouRemarks, ouSavedAt, financeViewedAt } = body;
     // ── Update a single document's fileUrl ──
     if (documentId && fileUrl) {
       const updatedDoc = await prisma.submissionDocument.update({
@@ -71,6 +71,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(ouSignedSupplierCode !== undefined && { ouSignedSupplierCode }),
         ...(ouRemarks !== undefined && { ouRemarks }),
         ...(ouSavedAt !== undefined && { ouSavedAt }),
+        ...(financeViewedAt !== undefined && { financeViewedAt: new Date(financeViewedAt) }),
         updatedAt: new Date(),
       },
       include: { parties: true, approvals: true, documents: true, comments: true, specialApprovers: true },

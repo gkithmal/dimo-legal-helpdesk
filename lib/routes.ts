@@ -3,6 +3,7 @@ export const ROUTES = {
   HOME: '/home',
   LEGAL_GM_HOME: '/legal-gm-home',
   SETTINGS: '/settings',
+  FINANCE: '/finance',
   FORM1: {
     INITIATOR: '/form1',
     APPROVAL: '/form1/approval',
@@ -18,6 +19,7 @@ export const ROUTES = {
 
 export function getHomeRoute(role: string): string {
   if (role === 'LEGAL_GM') return ROUTES.LEGAL_GM_HOME;
+  if (role === 'FINANCE') return ROUTES.FINANCE;
   if (role === 'SPECIAL_APPROVER') return ROUTES.FORM1.SPECIAL_APPROVER;
   return ROUTES.HOME;
 }

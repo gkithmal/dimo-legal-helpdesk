@@ -815,7 +815,7 @@ function LegalGMPageContent() {
               </button>
             </div>
             <div className="p-3 space-y-1.5">
-            {submission.documents.filter(doc => submission.parties.map(p => p.type).includes(doc.type) || (doc.type === 'Common' && submission.parties.some(p => p.type !== 'Individual'))).map((doc, i) => (
+            {submission.documents.filter(doc => submission.parties.map(p => p.type).includes(doc.type) || doc.type === 'Common').map((doc, i) => (
                 <div key={doc.id}
                   onClick={() => doc.fileUrl && window.open(doc.fileUrl, '_blank')}
                   className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
@@ -935,13 +935,11 @@ function LegalGMPageContent() {
                   <p className="text-[9px] text-slate-400 uppercase tracking-wider">Assigned Legal Officer</p>
                   <p className="text-xs font-bold text-[#17293E] truncate">{assignedOfficer.name || '—'}</p>
                 </div>
-                {isInitial && (
-                  <button onClick={() => setShowReassign(true)} disabled={isActing}
+                <button onClick={() => setShowReassign(true)} disabled={isActing}
                     className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-white flex-shrink-0 transition-all active:scale-95 disabled:opacity-50"
                     style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
-                    Reassign
-                  </button>
-                )}
+                  Reassign
+                </button>
               </div>
             </div>
 
@@ -975,7 +973,13 @@ function LegalGMPageContent() {
     await fetch(`/api/submissions/${submissionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ assignedLegalOfficer: n }),
+      body: JSON.stringify({
+        assignedLegalOfficer: n,
+        ...(stage === 'FINAL_APPROVAL' && {
+          status: 'PENDING_LEGAL_OFFICER',
+          loStage: 'POST_GM_APPROVAL',
+        }),
+      }),
     });
   }
 }} onClose={() => setShowReassign(false)} />}

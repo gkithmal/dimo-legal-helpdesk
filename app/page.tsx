@@ -10,6 +10,6 @@ export default async function RootPage() {
 
   if (role === 'LEGAL_GM')         redirect('/legal-gm-home');
   if (role === 'SPECIAL_APPROVER') redirect('/special-approver-home');
-  if (role === 'FINANCE_TEAM')     redirect('/finance');
+  if (role === 'FINANCE')     redirect('/finance');
   redirect('/home');
 }

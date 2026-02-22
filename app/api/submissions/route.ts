@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
           });
         });
         ['Form 15 (latest form)','Form 13 (latest form if applicable)','Form 20 (latest form if applicable)'].forEach((label) => {
-          if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type: 'Common', status: 'NONE' }); }
+          if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type: 'Company', status: 'NONE' }); }
         });
       }
 

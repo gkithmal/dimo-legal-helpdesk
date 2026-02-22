@@ -303,19 +303,28 @@ function RequestMoreDocsModal({ onClose, submissionId }: { onClose: () => void; 
   );
 }
 
-function SpecialApprovalsModal({ existing, onSave, onClose }: {
+function SpecialApprovalsModal({ existing, onSave, onClose, availableApprovers }: {
   existing: SpecialApprover[]; onSave: (a: SpecialApprover[]) => void; onClose: () => void;
+  availableApprovers: { id: string; name: string; email: string; department: string }[];
 }) {
   const [approvers, setApprovers] = useState<SpecialApprover[]>(existing);
   const [showAdd, setShowAdd]     = useState(false);
   const [newDept, setNewDept]     = useState('');
   const [newEmail, setNewEmail]   = useState('');
 
+  // Build dept -> emails map dynamically from DB users
+  const deptMap: Record<string, string[]> = {};
+  availableApprovers.forEach((u) => {
+    if (!deptMap[u.department]) deptMap[u.department] = [];
+    if (!deptMap[u.department].includes(u.email)) deptMap[u.department].push(u.email);
+  });
+  const departments = Object.keys(deptMap);
+
   const toggle = (dept: string) => {
     if (approvers.find((a) => a.department === dept)) {
       setApprovers((prev) => prev.filter((a) => a.department !== dept));
     } else {
-      setApprovers((prev) => [...prev, { id: Date.now().toString(), department: dept, email: DEPT_APPROVERS[dept]?.[0] || '' }]);
+      setApprovers((prev) => [...prev, { id: Date.now().toString(), department: dept, email: deptMap[dept]?.[0] || '' }]);
     }
   };
 
@@ -328,7 +337,7 @@ function SpecialApprovalsModal({ existing, onSave, onClose }: {
           <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/15 flex items-center justify-center text-white"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 space-y-2 max-h-80 overflow-y-auto">
-          {DEPARTMENTS.map((dept) => {
+          {departments.map((dept) => {
             const sel = approvers.find((a) => a.department === dept);
             return (
               <div key={dept} className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 border transition-all ${sel ? 'bg-[#EEF3F8] border-[#1A438A]/30' : 'bg-slate-50 border-slate-200'}`}>
@@ -338,7 +347,7 @@ function SpecialApprovalsModal({ existing, onSave, onClose }: {
                   <select value={sel.email}
                     onChange={(e) => setApprovers((prev) => prev.map((a) => a.department === dept ? { ...a, email: e.target.value } : a))}
                     className="text-xs bg-white border border-[#1A438A]/30 rounded-lg px-2 py-1.5 text-[#1A438A] focus:outline-none appearance-none max-w-[180px]">
-                    {(DEPT_APPROVERS[dept] || []).map((e) => <option key={e} value={e}>{e}</option>)}
+                    {(deptMap[dept] || []).map((e) => <option key={e} value={e}>{e}</option>)}
                   </select>
                 )}
               </div>
@@ -674,6 +683,17 @@ function LegalOfficerPageContent() {
   const [docs, setDocs]               = useState<RequiredDoc[]>([]);
   const [preparedDocs, setPreparedDocs] = useState<PreparedDoc[]>([]);
   const [specialApprovers, setSpecialApprovers] = useState<SpecialApprover[]>([]);
+  const [availableSpecialApprovers, setAvailableSpecialApprovers] = useState<{ id: string; name: string; email: string; department: string }[]>([]);
+  useEffect(() => {
+    fetch('/api/users')
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) setAvailableSpecialApprovers(
+          d.data.filter((u: any) => u.role === 'SPECIAL_APPROVER' && u.isActive && u.department)
+                .map((u: any) => ({ id: u.id, name: u.name, email: u.email, department: u.department }))
+        );
+      }).catch(() => {});
+  }, []);
   const [showSpecial, setShowSpecial] = useState(false);
   const [comments, setComments]       = useState<CommentEntry[]>([]);
   const [commentInput, setCommentInput] = useState('');
@@ -1313,7 +1333,21 @@ function LegalOfficerPageContent() {
 
       {/* ── Modals ── */}
       {showMoreDocs && <RequestMoreDocsModal onClose={() => setShowMoreDocs(false)} submissionId={submissionId!} />}
-      {showSpecial  && <SpecialApprovalsModal existing={specialApprovers} onSave={setSpecialApprovers} onClose={() => setShowSpecial(false)} />}
+      {showSpecial && <SpecialApprovalsModal
+        existing={specialApprovers}
+        availableApprovers={availableSpecialApprovers}
+        onSave={async (selected) => {
+          // Only call API for newly added approvers
+          const existing = specialApprovers.map(a => a.email);
+          const newOnes = selected.filter(a => !existing.includes(a.email));
+          setSpecialApprovers(selected);
+          setShowSpecial(false);
+          for (const a of newOnes) {
+            const user = availableSpecialApprovers.find(u => u.email === a.email);
+            await handleSendToSpecialApprover(a.email, user?.name || a.department);
+          }
+        }}
+        onClose={() => setShowSpecial(false)} />}
       {showAddDoc   && <AddDocumentModal onAdd={async (name, type, file) => {
         if (!submissionId) return;
         // 1. Create DB record
@@ -1325,6 +1359,7 @@ function LegalOfficerPageContent() {
         if (!data.success) return;
         const docId = data.data.id;
         // 2. Upload file if provided
+        let uploadedUrl: string | null = null;
         if (file) {
           const fd = new FormData();
           fd.append('file', file);
@@ -1332,13 +1367,14 @@ function LegalOfficerPageContent() {
           const uploadRes = await fetch('/api/upload', { method: 'POST', body: fd });
           const uploadData = await uploadRes.json();
           if (uploadData.success && uploadData.url) {
+            uploadedUrl = uploadData.url;
             await fetch(`/api/submissions/${submissionId}`, {
               method: 'PATCH', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ documentId: docId, fileUrl: uploadData.url, documentStatus: 'UPLOADED' }),
             });
           }
         }
-        setPreparedDocs((p) => [...p, { id: docId, name, type, fileUrl: null }]);
+        setPreparedDocs((p) => [...p, { id: docId, name, type, fileUrl: uploadedUrl }]);
       }} onClose={() => setShowAddDoc(false)} />}
       {showOfficialUse && <OfficialUseModal
         submissionNo={submission.submissionNo}
@@ -1381,7 +1417,7 @@ function LegalOfficerPageContent() {
             </div>
             <div className="p-5 space-y-3">
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Select Approver</label>
-              {[{ name: 'Nimal Perera', email: 'special.approver@testdimo.com' }].map((u) => (
+              {availableSpecialApprovers.map((u) => (
                 <div key={u.email}
                   onClick={() => { setSpecialName(u.name); setSpecialEmail(u.email); }}
                   className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all ${specialEmail === u.email ? 'border-[#1A438A] bg-[#EEF3F8]' : 'border-slate-200 hover:border-[#1A438A]/40'}`}>

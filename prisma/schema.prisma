@@ -89,6 +89,7 @@ model Submission {
   ouSignedSupplierCode String?
   ouRemarks            String?
   ouSavedAt            DateTime?
+  financeViewedAt      DateTime?
   bumId                String?
   fbpId                String?
   clusterHeadId        String?
