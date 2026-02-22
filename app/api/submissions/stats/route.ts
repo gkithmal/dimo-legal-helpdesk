@@ -78,15 +78,17 @@ export async function GET() {
     });
     // Resolve UUID keys to real names
     const loStatsRaw = Object.entries(loMap);
-    const loStats = await Promise.all(loStatsRaw.map(async ([id, counts]) => {
-      let name = id;
-      if (id && id.includes('-')) {
-        try {
-          const user = await prisma.user.findUnique({ where: { id }, select: { name: true } });
-          if (user?.name) name = user.name;
-        } catch {}
-      }
-      return { name, ...counts };
+    // Batch-resolve all LO ids in one query
+    const loIds = loStatsRaw.map(([id]) => id).filter(Boolean);
+    const loUsers = await prisma.user.findMany({
+      where: { id: { in: loIds } },
+      select: { id: true, name: true },
+    });
+    const loUserMap: Record<string, string> = {};
+    loUsers.forEach((u: { id: string; name: string | null }) => { if (u.name) loUserMap[u.id] = u.name; });
+    const loStats = loStatsRaw.map(([id, counts]) => ({
+      name: loUserMap[id] || id,
+      ...counts,
     }));
 
     // ── Completed counts per form ──

@@ -132,50 +132,44 @@ export async function POST(req: NextRequest) {
         ),
       ];
 
-      const docMap: Record<string, string[]> = {
-        Company: [
-          'Certificate of Incorporation',
-          'Form 1 (Company Registration)',
-          'Articles of Association',
-          'Board Resolution',
-          'VAT Registration Certificate',
-        ],
-        Partnership: [
-          'Partnership Agreement',
-          'Business Registration Certificate',
-          'NIC copies of all Partners',
-        ],
-        'Sole proprietorship': [
-          'Business Registration Certificate',
-          'NIC copy of Proprietor',
-        ],
-        Individual: ['NIC copy', 'Proof of Address'],
-      };
+      // ── Load doc config from DB (admin-configured via settings) ──
+      const formConfig = await tx.formConfig.findUnique({
+        where: { formId: formId || 1 },
+        include: { docs: { orderBy: { sortOrder: 'asc' } } },
+      });
 
       const seen = new Set<string>();
       const documentsData: { label: string; type: string; status: string }[] = [];
 
-      // Add party-specific documents
-      partyTypes.forEach((type) => {
-        (docMap[type] || []).forEach((label) => {
-          if (!seen.has(label)) {
-            seen.add(label);
-            documentsData.push({ label, type, status: 'NONE' });
+      if (formConfig?.docs?.length) {
+        // Use admin-configured docs: include party-specific + Common
+        formConfig.docs.forEach((doc) => {
+          const normalizedType = doc.type.replace('-', ' ');
+          const isPartyMatch = partyTypes.includes(doc.type) || partyTypes.includes(normalizedType);
+          if (doc.type === 'Common' || isPartyMatch) {
+            if (!seen.has(doc.label)) {
+              seen.add(doc.label);
+              documentsData.push({ label: doc.label, type: doc.type, status: 'NONE' });
+            }
           }
         });
-      });
-
-      // Add common documents
-      [
-        'Form 15 (latest form)',
-        'Form 13 (latest form if applicable)',
-        'Form 20 (latest form if applicable)',
-      ].forEach((label) => {
-        if (!seen.has(label)) {
-          seen.add(label);
-          documentsData.push({ label, type: 'Common', status: 'NONE' });
-        }
-      });
+      } else {
+        // Fallback hardcoded map if settings not configured
+        const docMap: Record<string, string[]> = {
+          Company: ['Certificate of Incorporation','Form 1 (Company Registration)','Articles of Association','Board Resolution','VAT Registration Certificate'],
+          Partnership: ['Partnership Agreement','Business Registration Certificate','NIC copies of all Partners'],
+          'Sole proprietorship': ['Business Registration Certificate','NIC copy of Proprietor'],
+          Individual: ['NIC copy', 'Proof of Address'],
+        };
+        partyTypes.forEach((type) => {
+          (docMap[type] || []).forEach((label) => {
+            if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type, status: 'NONE' }); }
+          });
+        });
+        ['Form 15 (latest form)','Form 13 (latest form if applicable)','Form 20 (latest form if applicable)'].forEach((label) => {
+          if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type: 'Common', status: 'NONE' }); }
+        });
+      }
 
       // ─── Create Submission with All Related Records ───
       return await tx.submission.create({

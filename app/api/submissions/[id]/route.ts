@@ -27,12 +27,27 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const body = await req.json();
-    const { status, loStage, legalGmStage, assignedLegalOfficer, documentId, fileUrl, documentStatus } = body;
+    const { status, loStage, legalGmStage, assignedLegalOfficer, documentId, fileUrl, documentStatus,
+      ouLegalReviewCompleted, ouRegisteredDate, ouLegalRefNumber, ouDateOfExecution, ouDateOfExpiration,
+      ouDirectorsExecuted1, ouDirectorsExecuted2, ouConsideration, ouReviewedBy, ouRegisteredBy,
+      ouSignedSupplierCode, ouRemarks, ouSavedAt } = body;
     // ── Update a single document's fileUrl ──
     if (documentId && fileUrl) {
       const updatedDoc = await prisma.submissionDocument.update({
         where: { id: documentId },
         data: { fileUrl, status: documentStatus || 'UPLOADED', uploadedAt: new Date() },
+      });
+      return NextResponse.json({ success: true, data: updatedDoc });
+    }
+    // Update document status/comment from Legal Officer review
+    if (documentId && !fileUrl) {
+      const { documentStatus: docStatus, documentComment } = body;
+      const updatedDoc = await prisma.submissionDocument.update({
+        where: { id: documentId },
+        data: {
+          ...(docStatus && { status: docStatus }),
+          ...(documentComment !== undefined && { comment: documentComment }),
+        },
       });
       return NextResponse.json({ success: true, data: updatedDoc });
     }
@@ -43,6 +58,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(loStage && { loStage }),
         ...(legalGmStage && { legalGmStage }),
         ...(assignedLegalOfficer !== undefined && { assignedLegalOfficer }),
+        ...(ouLegalReviewCompleted !== undefined && { ouLegalReviewCompleted }),
+        ...(ouRegisteredDate !== undefined && { ouRegisteredDate }),
+        ...(ouLegalRefNumber !== undefined && { ouLegalRefNumber }),
+        ...(ouDateOfExecution !== undefined && { ouDateOfExecution }),
+        ...(ouDateOfExpiration !== undefined && { ouDateOfExpiration }),
+        ...(ouDirectorsExecuted1 !== undefined && { ouDirectorsExecuted1 }),
+        ...(ouDirectorsExecuted2 !== undefined && { ouDirectorsExecuted2 }),
+        ...(ouConsideration !== undefined && { ouConsideration }),
+        ...(ouReviewedBy !== undefined && { ouReviewedBy }),
+        ...(ouRegisteredBy !== undefined && { ouRegisteredBy }),
+        ...(ouSignedSupplierCode !== undefined && { ouSignedSupplierCode }),
+        ...(ouRemarks !== undefined && { ouRemarks }),
+        ...(ouSavedAt !== undefined && { ouSavedAt }),
         updatedAt: new Date(),
       },
       include: { parties: true, approvals: true, documents: true, comments: true, specialApprovers: true },
@@ -50,5 +78,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ success: true, data: updated });
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Failed to update' }, { status: 500 });
+  }
+}
+
+export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { label, type } = await req.json();
+    const submissionId = (await params).id;
+    const doc = await prisma.submissionDocument.create({
+      data: { submissionId, label, type, status: 'NONE' },
+    });
+    return NextResponse.json({ success: true, data: doc });
+  } catch (error) {
+    return NextResponse.json({ success: false, error: 'Failed to create document' }, { status: 500 });
   }
 }

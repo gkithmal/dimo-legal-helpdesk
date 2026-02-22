@@ -1,10 +1,11 @@
 'use client';
 
+import NotificationBell from '@/components/shared/NotificationBell';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import {
-  LogOut, Search, ChevronRight, TrendingUp, Bell, Home, Settings,
+  LogOut, Search, ChevronRight, TrendingUp, Home, Settings, User,
   X, Loader2, AlertCircle, ChevronDown,
 } from 'lucide-react';
 
@@ -481,6 +482,7 @@ function Dashboard({ statsCards, loStats, ongoingTasks, completedCounts, earlyCo
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function LegalGMHomePage() {
+  const [showSignOut, setShowSignOut] = useState(false);
   const router                                = useRouter();
   const { data: session }                     = useSession();
 
@@ -507,28 +509,18 @@ export default function LegalGMHomePage() {
         if (!data.success) return;
         const mapped = data.data.map((s: {
             id: string; submissionNo: string; formName: string;
-            status: string; assignedLegalOfficer?: string; createdAt: string;
+            status: string; assignedLegalOfficer?: string; legalOfficerName?: string; createdAt: string;
           }) => ({
             id:          s.id,
             requestNo:   s.submissionNo,
             formTitle:   s.formName || s.submissionNo,
-            legalOfficer: s.assignedLegalOfficer || '—',
+            legalOfficer: s.legalOfficerName || s.assignedLegalOfficer || '—',
             createdDate: fmtDate(s.createdAt),
             status:      mapDbStatusToUI(s.status),
             statusLabel: mapDbStatusToLabel(s.status),
             route:       `/form1/legal-gm?id=${s.id}`,
           }));
-        const resolved = await Promise.all(mapped.map(async (item: typeof mapped[0]) => {
-          if (item.legalOfficer && item.legalOfficer.includes('-')) {
-            try {
-              const ur = await fetch('/api/users/' + item.legalOfficer);
-              const ud = await ur.json();
-              if (ud.success && ud.data?.name) return { ...item, legalOfficer: ud.data.name };
-            } catch {}
-          }
-          return item;
-        }));
-        setApprovals(resolved);
+        setApprovals(mapped);
       })
       .catch((err) => console.error("Failed to load data:", err))
       .finally(() => setLoadingList(false));
@@ -598,15 +590,18 @@ export default function LegalGMHomePage() {
 
         {/* Left sidebar nav icons (matching screenshot) */}
         <div className="w-12 flex-shrink-0 bg-[#17293E] flex flex-col items-center py-4 gap-5 border-r border-white/10">
-          <button className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors">
+          <button onClick={() => router.push('/legal-gm-home')} className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center text-white hover:bg-white/20 transition-colors" title="Home">
             <Home className="w-4 h-4" />
           </button>
-          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-white/50 hover:bg-white/10 transition-colors">
-            <Bell className="w-4 h-4" />
-          </button>
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white/50 hover:bg-white/10 transition-colors">
+            <NotificationBell />
+          </div>
           <div className="flex-1" />
-          <button className="w-8 h-8 rounded-lg flex items-center justify-center text-white/50 hover:bg-white/10 transition-colors">
+          <button onClick={() => router.push('/settings')} className="w-8 h-8 rounded-lg flex items-center justify-center text-white/50 hover:bg-white/10 transition-colors" title="Settings">
             <Settings className="w-4 h-4" />
+          </button>
+          <button onClick={() => setShowSignOut(true)} className="w-8 h-8 rounded-lg flex items-center justify-center text-white/50 hover:bg-white/10 transition-colors" title="Sign Out">
+            <User className="w-4 h-4" />
           </button>
         </div>
 
@@ -634,6 +629,19 @@ export default function LegalGMHomePage() {
           onShowMore={() => { router.push(preview.route); setPreview(null); }}
           onClose={() => setPreview(null)}
         />
+      )}
+      {showSignOut && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSignOut(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl p-6 mx-4 w-full max-w-sm z-10">
+            <h3 className="text-lg font-bold text-slate-800 mb-1">Sign Out</h3>
+            <p className="text-sm text-slate-500 mb-5">Are you sure you want to sign out?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowSignOut(false)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
+              <button onClick={() => { setShowSignOut(false); router.push('/login'); }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>Sign Out</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

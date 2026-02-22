@@ -75,6 +75,20 @@ model Submission {
   dueDate              DateTime?
   parentId             String?
   isResubmission       Boolean  @default(false)
+  // Official Use Only fields (filled by Legal Officer)
+  ouLegalReviewCompleted Boolean? @default(false)
+  ouRegisteredDate     String?
+  ouLegalRefNumber     String?
+  ouDateOfExecution    String?
+  ouDateOfExpiration   String?
+  ouDirectorsExecuted1 String?
+  ouDirectorsExecuted2 String?
+  ouConsideration      String?
+  ouReviewedBy         String?
+  ouRegisteredBy       String?
+  ouSignedSupplierCode String?
+  ouRemarks            String?
+  ouSavedAt            DateTime?
   bumId                String?
   fbpId                String?
   clusterHeadId        String?

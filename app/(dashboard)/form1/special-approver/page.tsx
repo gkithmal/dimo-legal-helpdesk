@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
-  Home, Lightbulb, Search, Settings, User,
+  LogOut, Home, Lightbulb, Search, Settings, User,
   FileText, Paperclip, CheckCircle2, X, Upload, File,
   Eye, Trash2, Send, AlertCircle, ArrowLeft, Loader2,
   ThumbsUp, ThumbsDown,
@@ -46,8 +46,12 @@ const REQUIRED_DOCS: Record<string, string[]> = {
   Individual:          ['NIC copy', 'Proof of Address'],
 };
 const WORKFLOW_STEPS = [
-  { label: 'Submitted' }, { label: 'BUM/FBP/\nCluster' },
-  { label: 'Legal GM' }, { label: 'Legal\nOfficer' }, { label: 'Completed' },
+  { label: 'Form\nSubmission' },
+  { label: 'First Level\nApprovals' },
+  { label: 'Legal GM\nReview' },
+  { label: 'Legal Officer\nReview' },
+  { label: 'GM Final\nApproval' },
+  { label: 'Ready to\nCollect' },
 ];
 const INSTRUCTIONS_TEXT = [
   'Please ensure all required documents are attached before submitting the form.',
@@ -272,6 +276,7 @@ function SpecialApproverForm1Content() {
   const searchParams  = useSearchParams();
   const submissionId  = searchParams.get('id');
   const router        = useRouter();
+  const [showSignOut, setShowSignOut] = useState(false);
   const { data: session } = useSession();
 
   const currentUserName = session?.user?.name ?? 'User';
@@ -408,8 +413,8 @@ function SpecialApproverForm1Content() {
 
   const statusToStep: Record<string, number> = {
     DRAFT: 0, PENDING_APPROVAL: 1, PENDING_LEGAL_GM: 2,
-    PENDING_LEGAL_OFFICER: 3, PENDING_LEGAL_GM_FINAL: 3,
-    PENDING_SPECIAL_APPROVER: 3, COMPLETED: 4, CANCELLED: 4, SENT_BACK: 1,
+    PENDING_LEGAL_OFFICER: 3, PENDING_SPECIAL_APPROVER: 3,
+    PENDING_LEGAL_GM_FINAL: 4, COMPLETED: 5, CANCELLED: 5, SENT_BACK: 1,
   };
   const currentStep = statusToStep[submissionStatus] ?? 1;
   const isPendingAction = submissionStatus === 'PENDING_SPECIAL_APPROVER';
@@ -433,20 +438,42 @@ function SpecialApproverForm1Content() {
         <div className="w-8 h-px bg-white/10" />
         <nav className="flex flex-col items-center gap-1 flex-1 w-full px-2">
           <NotificationBell />
-          {[Home, Lightbulb, Search].map((Icon, i) => (
-            <button key={i} className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
-              <Icon className="w-[18px] h-[18px]" />
-            </button>
-          ))}
+          <button onClick={() => router.push("/special-approver-home")} className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all" title="Home">
+            <Home className="w-[18px] h-[18px]" />
+          </button>
+          <button className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
+            <Lightbulb className="w-[18px] h-[18px]" />
+          </button>
+          <button className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
+            <Search className="w-[18px] h-[18px]" />
+          </button>
         </nav>
         <div className="flex flex-col items-center gap-1 w-full px-2 mb-2">
-          {[Settings, User].map((Icon, i) => (
-            <button key={i} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all">
-              <Icon className="w-[18px] h-[18px]" />
-            </button>
-          ))}
+          <button className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all">
+            <Settings className="w-[18px] h-[18px]" />
+          </button>
+          <button onClick={() => setShowSignOut(true)} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all" title="Sign Out">
+            <User className="w-[18px] h-[18px]" />
+          </button>
         </div>
       </aside>
+
+      {showSignOut && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSignOut(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xs p-7 flex flex-col items-center text-center">
+            <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center mb-4">
+              <LogOut className="w-7 h-7 text-red-500" />
+            </div>
+            <h3 className="text-[#17293E] font-bold text-base mb-1">Sign Out?</h3>
+            <p className="text-slate-500 text-sm mb-6">You will be redirected to the login page.</p>
+            <div className="flex gap-3 w-full">
+              <button onClick={() => setShowSignOut(false)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
+              <button onClick={() => { setShowSignOut(false); router.push('/login'); }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>Sign Out</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Main ── */}
       <div className="flex-1 flex gap-5 p-5 overflow-auto min-w-0">

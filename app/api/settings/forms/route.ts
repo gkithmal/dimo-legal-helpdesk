@@ -20,9 +20,19 @@ export async function POST(req: NextRequest) {
     const { formId, instructions, docs } = body;
     if (!formId) return NextResponse.json({ success: false, error: 'Missing formId' }, { status: 400 });
     // Delete existing docs and recreate
-    const config = await prisma.formConfig.update({
+    const config = await prisma.formConfig.upsert({
       where: { formId },
-      data: {
+      create: {
+        formId,
+        formName: `Form ${formId}`,
+        instructions: instructions ?? '',
+        docs: {
+          create: (docs || []).map((d: { label: string; type: string }, i: number) => ({
+            label: d.label, type: d.type, sortOrder: i,
+          })),
+        },
+      },
+      update: {
         instructions: instructions ?? '',
         docs: {
           deleteMany: {},

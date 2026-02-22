@@ -14,7 +14,7 @@ import { ROUTES } from '@/lib/routes';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type FormMode = 'new' | 'view' | 'resubmit';
+type FormMode = 'new' | 'view' | 'resubmit' | 'draft';
 
 interface Party {
   type: string;
@@ -124,12 +124,20 @@ const REQUIRED_DOCS: Record<string, string[]> = {
   ],
 };
 
+// Common documents always required regardless of party type
+const COMMON_DOCS = [
+  'Form 15 (latest form)',
+  'Form 13 (latest form if applicable)',
+  'Form 20 (latest form if applicable)',
+];
+
 const WORKFLOW_STEPS = [
-  { label: 'Initiate' },
-  { label: 'BUM /\nFBP / CH' },
-  { label: 'Legal\nGM' },
-  { label: 'Legal\nOfficer' },
-  { label: 'Complete' },
+  { label: 'Form\nSubmission' },
+  { label: 'First Level\nApprovals' },
+  { label: 'Legal GM\nReview' },
+  { label: 'Legal Officer\nReview' },
+  { label: 'GM Final\nApproval' },
+  { label: 'Ready to\nCollect' },
 ];
 
 const INSTRUCTIONS_TEXT = [
@@ -191,6 +199,7 @@ function ComboBox({
   placeholder?: string; disabled?: boolean; dropUp?: boolean; hasError?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [showSignOut, setShowSignOut] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -607,14 +616,17 @@ function ValidationModal({ errors, onClose }: { errors: string[]; onClose: () =>
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function Form1PageContent() {
+  const [showSignOut, setShowSignOut] = useState(false);
   const searchParams = useSearchParams();
   const urlMode = (searchParams.get('mode') as FormMode) ?? 'new';
   const submissionId = searchParams.get('id');
   const mode = urlMode;
   const router = useRouter();
   const isReadOnly = mode === 'view';
+  const isDraft = mode === 'draft';
 
   const [submissionNo, setSubmissionNo] = useState('');
+  const [submissionData, setSubmissionData] = useState<any>(null);
   useEffect(() => {
     if (mode === 'new' || !submissionId) {
       setSubmissionNo(generateSubmissionId());
@@ -626,6 +638,7 @@ function Form1PageContent() {
         if (!d.success) return;
         const s = d.data;
         setSubmissionNo(s.submissionNo);
+        setSubmissionData(s);
         setSubmissionStatus(s.status ?? '');
         setCompanyCode(s.companyCode ?? '');
         setTitle(s.title ?? '');
@@ -641,9 +654,55 @@ function Form1PageContent() {
             if (a.role === 'BUM') setBum(a.approverName || '');
             if (a.role === 'FBP') setFbp(a.approverName || '');
             if (a.role === 'CLUSTER_HEAD') setClusterHead(a.approverName || '');
-            if (a.role === 'LEGAL_OFFICER' || a.role === 'LEGAL_GM') setLegalOfficer(a.approverName || '');
           });
         }
+        // Always read LO from submission directly — LEGAL_OFFICER never appears in approvals[]
+        setLegalOfficer(s.legalOfficerName || s.assignedLegalOfficer || '');
+        // Build audit log
+        const ROLE_LABEL: Record<string,string> = {
+          BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head',
+          LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer', SPECIAL_APPROVER: 'Special Approver',
+        };
+        const STATUS_MAP: Record<string,string> = {
+          PENDING_APPROVAL: 'Pending First Level Approvals',
+          PENDING_LEGAL_GM: 'Pending Legal GM Review',
+          PENDING_LEGAL_OFFICER: 'Pending Legal Officer Review',
+          PENDING_SPECIAL_APPROVER: 'Pending Special Approver',
+          PENDING_LEGAL_GM_FINAL: 'Pending Legal GM Final Approval',
+          COMPLETED: 'Completed',
+          SENT_BACK: 'Sent Back to Initiator',
+          CANCELLED: 'Cancelled',
+        };
+        const fmt = (d: string) => d ? new Date(d).toLocaleString('en-GB', { day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+        const logEntries: {id:number;actor:string;role:string;action:string;timestamp:string}[] = [
+          { id: 0, actor: 'System', role: 'System', action: 'Submission created — ' + (STATUS_MAP[s.status] || s.status), timestamp: fmt(s.createdAt) },
+          ...(s.approvals || [])
+            .filter((a: any) => a.actionDate)
+            .map((a: any, i: number) => ({
+              id: i + 1,
+              actor: a.approverName || a.role,
+              role: ROLE_LABEL[a.role] || a.role,
+              action: a.status === 'APPROVED' ? 'Approved' : a.status === 'SENT_BACK' ? 'Sent Back' : 'Cancelled',
+              timestamp: fmt(a.actionDate),
+            })),
+          ...(s.comments || []).map((c: any, i: number) => ({
+            id: 1000 + i,
+            actor: c.authorName,
+            role: ROLE_LABEL[c.authorRole] || c.authorRole,
+            action: 'Comment: "' + c.text + '"',
+            timestamp: fmt(c.createdAt),
+          })),
+          ...(s.specialApprovers || [])
+            .filter((sa: any) => sa.actionDate)
+            .map((sa: any, i: number) => ({
+              id: 2000 + i,
+              actor: sa.approverName,
+              role: 'Special Approver',
+              action: sa.status === 'APPROVED' ? 'Approved' : 'Sent Back',
+              timestamp: fmt(sa.actionDate),
+            })),
+        ].sort((a, b) => a.id - b.id);
+        setLog(logEntries);
         if (s.documents?.length) {
           const loaded: Record<string, AttachedFile[]> = {};
           const idMap: Record<string, string> = {};
@@ -662,6 +721,20 @@ function Form1PageContent() {
 
   // ── UI state ──
   const [showInstructions, setShowInstructions] = useState(false);
+  const [instructionsText, setInstructionsText] = useState<string>('');
+  const [formConfigDocs, setFormConfigDocs] = useState<{ label: string; type: string }[]>([]);
+  useEffect(() => {
+    fetch('/api/settings/forms')
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          const config = data.data.find((c: any) => c.formId === 1);
+          if (config?.instructions) setInstructionsText(config.instructions);
+          if (config?.docs?.length) setFormConfigDocs(config.docs);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [showSuccess, setShowSuccess] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [showValidation, setShowValidation] = useState(false);
@@ -717,16 +790,36 @@ function Form1PageContent() {
   const [clusterHead, setClusterHead] = useState('');
   const [commentInput, setCommentInput] = useState('');
   const [comments, setComments] = useState<CommentEntry[]>([]);
+  const [showLog, setShowLog] = useState(false);
+  const [log, setLog] = useState<{id:number;actor:string;role:string;action:string;timestamp:string}[]>([]);
 
   // ── Derived ──
   const selectedTypes = Array.from(new Set(parties.map((p) => p.type).filter(Boolean)));
   const requiredDocs: { label: string; key: string }[] = [];
-  selectedTypes.forEach((type) => {
-    (REQUIRED_DOCS[type] || []).forEach((doc) => {
-      const key = doc;
-      if (!requiredDocs.find((d) => d.key === key)) requiredDocs.push({ label: doc, key });
+  if (formConfigDocs.length > 0) {
+    // Use admin-configured docs from settings — filter by selected party types + Common
+    formConfigDocs.forEach((doc) => {
+      const normalizedType = doc.type.replace('-', ' '); // handle Sole-proprietorship vs Sole proprietorship
+      if (doc.type === 'Common' || selectedTypes.includes(doc.type) || selectedTypes.includes(normalizedType)) {
+        if (!requiredDocs.find((d) => d.key === doc.label)) {
+          requiredDocs.push({ label: doc.label, key: doc.label });
+        }
+      }
     });
-  });
+  } else {
+    // Fallback to hardcoded if settings not yet configured
+    selectedTypes.forEach((type) => {
+      (REQUIRED_DOCS[type] || []).forEach((doc) => {
+        const key = doc;
+        if (!requiredDocs.find((d) => d.key === key)) requiredDocs.push({ label: doc, key });
+      });
+    });
+    if (requiredDocs.length > 0) {
+      COMMON_DOCS.forEach((doc) => {
+        if (!requiredDocs.find((d) => d.key === doc)) requiredDocs.push({ label: doc, key: doc });
+      });
+    }
+  }
 
   const hasAtLeastOneParty = parties.some((p) => p.type && p.name.trim());
 
@@ -792,10 +885,16 @@ function Form1PageContent() {
         }),
       };
 
-      const res = await fetch('/api/submissions', {
-        method: 'POST',
+      // If editing a draft, PATCH the existing record instead of creating a new one
+      const isDraftEdit = mode === 'draft' && submissionId; // resubmit always POSTs new record with parentId
+      const res = await fetch(isDraftEdit ? `/api/submissions/${submissionId}` : '/api/submissions', {
+        method: isDraftEdit ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(isDraftEdit ? {
+          status: asDraft ? 'DRAFT' : 'PENDING_APPROVAL',
+          companyCode, title, sapCostCenter, scopeOfAgreement, term,
+          lkrValue: lkrValue.replace(/,/g, ''), remarks, initiatorComments,
+        } : payload),
       });
 
       if (!res.ok) {
@@ -805,6 +904,15 @@ function Form1PageContent() {
 
       const data = await res.json();
       if (data.submissionNo) setSubmissionNo(data.submissionNo);
+
+      // Mark original as RESUBMITTED so it leaves the initiator's active list
+      if (mode === 'resubmit' && submissionId) {
+        await fetch(`/api/submissions/${submissionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'RESUBMITTED' }),
+        });
+      }
 
       // Upload pending files now that we have real submission ID + doc IDs
       if (!asDraft && data.data?.id && data.data?.documents?.length) {
@@ -842,6 +950,8 @@ function Form1PageContent() {
       if (asDraft) {
         setShowBackModal(false);
         router.push(ROUTES.HOME);
+      } else if (mode === 'resubmit') {
+        router.push(ROUTES.HOME);
       } else {
         setShowSuccess(true);
       }
@@ -863,7 +973,7 @@ function Form1PageContent() {
 
   const handlePostComment = () => {
     if (!commentInput.trim()) return;
-    setComments((prev) => [...prev, { id: Date.now(), author: 'Oliva Perera', text: commentInput.trim(), time: 'Just now' }]);
+    setComments((prev) => [...prev, { id: Date.now(), author: session?.user?.name || 'You', text: commentInput.trim(), time: 'Just now' }]);
     setCommentInput('');
   };
 
@@ -878,10 +988,10 @@ function Form1PageContent() {
     'PENDING_APPROVAL': 1,
     'PENDING_LEGAL_GM': 2,
     'PENDING_LEGAL_OFFICER': 3,
-    'PENDING_LEGAL_GM_FINAL': 3,
     'PENDING_SPECIAL_APPROVER': 3,
-    'COMPLETED': 4,
-    'CANCELLED': 4,
+    'PENDING_LEGAL_GM_FINAL': 4,
+    'COMPLETED': 5,
+    'CANCELLED': 5,
     'SENT_BACK': 1,
   };
   const [submissionStatus, setSubmissionStatus] = useState('');
@@ -900,24 +1010,29 @@ function Form1PageContent() {
           <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-[#1A438A]" />
         </div>
         <div className="text-center">
-          <p className="text-white text-[10px] font-semibold">Oliva</p>
-          <p className="text-white/40 text-[9px]">Perera</p>
+          <p className="text-white text-[10px] font-semibold">{session?.user?.name?.split(' ')[0] || 'Me'}</p>
+          <p className="text-white/40 text-[9px]">{session?.user?.name?.split(' ').slice(1).join(' ') || ''}</p>
         </div>
         <div className="w-8 h-px bg-white/10" />
         <nav className="flex flex-col items-center gap-1 flex-1 w-full px-2">
           <NotificationBell />
-          {[Home, Lightbulb, Search].map((Icon, i) => (
-            <button key={i} className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
-              <Icon className="w-[18px] h-[18px]" />
+          <button onClick={() => router.push('/home')} className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all" title="Home">
+              <Home className="w-[18px] h-[18px]" />
             </button>
-          ))}
+            <button className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all" title="Tips">
+              <Lightbulb className="w-[18px] h-[18px]" />
+            </button>
+            <button className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all" title="Search">
+              <Search className="w-[18px] h-[18px]" />
+            </button>
         </nav>
         <div className="flex flex-col items-center gap-1 w-full px-2 mb-2">
-          {[Settings, User].map((Icon, i) => (
-            <button key={i} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all">
-              <Icon className="w-[18px] h-[18px]" />
+          <button onClick={() => router.push('/settings')} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all" title="Settings">
+              <Settings className="w-[18px] h-[18px]" />
             </button>
-          ))}
+            <button onClick={() => setShowSignOut(true)} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all" title="Sign Out">
+              <User className="w-[18px] h-[18px]" />
+            </button>
         </div>
       </aside>
 
@@ -1057,7 +1172,7 @@ function Form1PageContent() {
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4">
             <div className="flex items-center justify-between mb-5">
               {mode !== 'new' ? (
-                <button className="text-[11px] font-semibold text-[#1A438A] hover:underline">View Log</button>
+                <button onClick={() => setShowLog(true)} className="text-[11px] font-semibold text-[#1A438A] hover:underline">View Log</button>
               ) : <div />}
               <div className="text-right">
                 <p className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Submission No.</p>
@@ -1135,9 +1250,59 @@ function Form1PageContent() {
                 <div className="w-0.5 h-3.5 rounded-full bg-[#1A438A]" />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-[#17293E]">Documents by Legal Dept.</span>
               </div>
-              <div className="px-4 py-3">
-                <p className="text-[11px] text-slate-400 italic">Not applicable at this stage</p>
+              <div className="px-3 py-2 space-y-1.5">
+                {(() => {
+                  const loDocs = Object.entries(docFiles).filter(([key]) => key.startsWith('LO_PREPARED'));
+                  const loDocsFromDB = (submissionData as any)?.documents?.filter((d: any) => d.type?.startsWith('LO_PREPARED')) || [];
+                  if (loDocsFromDB.length === 0) return <p className="text-[11px] text-slate-400 italic px-1">No documents added yet</p>;
+                  return loDocsFromDB.map((d: any) => (
+                    <div key={d.id} className="flex items-center gap-2 rounded-lg px-3 py-2 bg-[#EEF3F8] border border-[#1A438A]/20">
+                      <FileText className="w-3.5 h-3.5 text-[#1A438A]" />
+                      <span className="text-[11px] font-semibold text-[#1A438A] flex-1 truncate">{d.label}</span>
+                      <span className="text-[9px] uppercase font-bold text-[#4686B7] bg-[#1A438A]/10 px-1.5 py-0.5 rounded">
+                        {d.type === 'LO_PREPARED_FINAL' ? 'Final' : 'Initial'}
+                      </span>
+                    </div>
+                  ));
+                })()}
               </div>
+            {/* LO-Requested Additional Documents */}
+            {(() => {
+              const requested = (submissionData as any)?.documents?.filter((d: any) => d.type === 'LO_REQUESTED') || [];
+              if (requested.length === 0) return null;
+              return (
+                <div className="border-t border-amber-100">
+                  <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-50/80">
+                    <div className="w-0.5 h-3.5 rounded-full bg-amber-500" />
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-amber-700">Requested by Legal</span>
+                  </div>
+                  <div className="px-3 py-2 space-y-1.5">
+                    {requested.map((d: any) => {
+                      const files = docFiles[d.label] || [];
+                      const hasFiles = files.length > 0;
+                      return (
+                        <div key={d.id}
+                          className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all ${hasFiles ? 'bg-emerald-50 border-emerald-200' : 'bg-amber-50 border-amber-200'}`}>
+                          <div className="flex-1 mr-2 min-w-0">
+                            <span className="text-[11px] text-slate-600 leading-tight block">{d.label}</span>
+                            {hasFiles && <span className="text-[10px] text-emerald-600 font-semibold">{files.length} file{files.length > 1 ? 's' : ''} attached</span>}
+                          </div>
+                          {uploadingDoc === d.label ? (
+                            <Loader2 className="w-4 h-4 text-amber-500 animate-spin flex-shrink-0" />
+                          ) : canUploadDocs ? (
+                            <button onClick={() => setUploadPopup({ docKey: d.label, docLabel: d.label, docId: d.id })} className="flex-shrink-0 transition-colors">
+                              {hasFiles ? <CheckCircle2 className="w-4 h-4 text-emerald-500 hover:text-emerald-600" /> : <Paperclip className="w-4 h-4 text-amber-500 hover:text-amber-600" />}
+                            </button>
+                          ) : (
+                            hasFiles && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
             </div>
           </div>
 
@@ -1207,6 +1372,15 @@ function Form1PageContent() {
               Back
             </button>
 
+            {!isReadOnly && mode !== 'resubmit' && (
+              <button
+                onClick={() => handleSubmitClick(true)}
+                disabled={isSubmitting}
+                className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all duration-200 active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
+                style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
+                {isSubmitting ? 'Saving...' : 'Save Draft'}
+              </button>
+            )}
             {!isReadOnly && (
               <button
                 onClick={() => { setSubmitted(true); handleSubmitClick(false); }}
@@ -1341,18 +1515,14 @@ function Form1PageContent() {
                 <X className="w-4 h-4" />
               </button>
             </div>
-            <div className="p-6 overflow-y-auto flex-1 space-y-4">
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                <p className="text-sm text-amber-800 font-medium leading-relaxed">{INSTRUCTIONS_TEXT[0]}</p>
-              </div>
-              <ol className="space-y-3">
-                {INSTRUCTIONS_TEXT.slice(1).map((item, i) => (
-                  <li key={i} className="flex gap-3 text-sm text-slate-700 leading-relaxed">
-                    <span className="w-6 h-6 rounded-full bg-[#EEF3F8] text-[#1A438A] font-bold text-[11px] flex items-center justify-center flex-shrink-0 mt-px">{i + 1}</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ol>
+            <div className="p-6 overflow-y-auto flex-1">
+              {instructionsText ? (
+                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{instructionsText}</p>
+              ) : (
+                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                  <p className="text-sm text-amber-800 font-medium leading-relaxed">No instructions have been configured yet. Please contact the Legal GM.</p>
+                </div>
+              )}
             </div>
             <div className="p-4 border-t border-slate-100">
               <button onClick={() => setShowInstructions(false)}
@@ -1393,9 +1563,65 @@ function Form1PageContent() {
           </div>
         </div>
       )}
+      {showLog && <ViewLogModal log={log} onClose={() => setShowLog(false)} />}
+      {showSignOut && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSignOut(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl p-6 mx-4 w-full max-w-sm z-10">
+            <h3 className="text-lg font-bold text-slate-800 mb-1">Sign Out</h3>
+            <p className="text-sm text-slate-500 mb-5">Are you sure you want to sign out?</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowSignOut(false)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
+              <button onClick={() => { setShowSignOut(false); router.push('/login'); }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>Sign Out</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
+function ViewLogModal({ log, onClose }: { log: {id:number;actor:string;role:string;action:string;timestamp:string}[]; onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between px-6 py-4" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
+          <span className="text-white font-bold text-base">Workflow Log</span>
+          <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white"><X className="w-4 h-4" /></button>
+        </div>
+        <div className="overflow-y-auto flex-1 p-4">
+          {log.length === 0 ? (
+            <p className="text-sm text-slate-400 text-center py-8">No log entries yet.</p>
+          ) : (
+            <div className="relative pl-6">
+              <div className="absolute left-[7px] top-2 bottom-2 w-px bg-slate-200" />
+              {log.map((entry, i) => (
+                <div key={entry.id} className="relative mb-4">
+                  <div className={`absolute -left-6 top-1 w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center
+                    ${i === 0 ? 'bg-slate-400 border-slate-400' : 'bg-[#1A438A] border-[#1A438A]'}`}>
+                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                  </div>
+                  <div className="bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
+                    <div className="flex justify-between items-start gap-2 mb-0.5">
+                      <span className="text-[11px] font-bold text-[#1A438A]">{entry.actor}</span>
+                      <span className="text-[10px] text-slate-400 flex-shrink-0">{entry.timestamp}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-semibold mb-1">{entry.role}</p>
+                    <p className="text-xs text-slate-600 leading-relaxed">{entry.action}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="p-4 border-t border-slate-100">
+          <button onClick={onClose} className="w-full py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Form1Page() {
   return (
     <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="text-gray-600">Loading...</div></div>}>

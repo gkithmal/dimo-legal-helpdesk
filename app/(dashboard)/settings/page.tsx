@@ -317,8 +317,14 @@ function FormSettingsTab() {
 
 export default function SettingsPage() {
   const {data:session}=useSession();
+  const router=useRouter();
   const [activeTab,setActiveTab]=useState<'staff'|'forms'>('staff');
   const userName=session?.user?.name||'Legal GM';
+  useEffect(()=>{
+    if(session && (session.user as any)?.role !== 'LEGAL_GM'){
+      router.replace(ROUTES.HOME);
+    }
+  },[session,router]);
   const userInitial=getInitials(userName);
   const [firstName,lastName]=userName.split(' ');
   return(
