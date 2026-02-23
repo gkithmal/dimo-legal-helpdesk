@@ -88,6 +88,11 @@ model Submission {
   ouRegisteredBy       String?
   ouSignedSupplierCode String?
   ouRemarks            String?
+  f2StampDuty          String?
+  f2LegalFees          String?
+  f2ReferenceNo        String?
+  f2BoardApproval      Boolean? @default(false)
+  f2Remarks            String?
   ouSavedAt            DateTime?
   financeViewedAt      DateTime?
   bumId                String?

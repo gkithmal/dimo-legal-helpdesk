@@ -37,7 +37,26 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       let newStatus = submission.status;
       if (action === 'CANCELLED') newStatus = 'CANCELLED';
       else if (action === 'SENT_BACK') newStatus = 'SENT_BACK';
-      else if (allApproved) newStatus = 'PENDING_LEGAL_GM';
+      else if (allApproved) {
+        newStatus = submission.formId === 2 ? 'PENDING_CEO' : 'PENDING_LEGAL_GM';
+      }
+      
+      await prisma.submission.update({ where: { id }, data: { status: newStatus, updatedAt: new Date() } });
+    }
+
+    // ── CEO ───────────────────────────────────────────────────────────────
+    if (role === 'CEO') {
+      await prisma.submissionApproval.updateMany({
+        where: { submissionId: id, role: 'CEO' },
+        data: {
+          status: action,
+          approverName: approverName || '',
+          approverEmail: approverEmail || '',
+          comment: comment || null,
+          actionDate: new Date(),
+        },
+      });
+      const newStatus = action === 'APPROVED' ? 'PENDING_LEGAL_GM' : 'SENT_BACK';
       await prisma.submission.update({ where: { id }, data: { status: newStatus, updatedAt: new Date() } });
     }
 

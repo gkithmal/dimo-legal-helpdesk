@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type UserRole = 'INITIATOR' | 'BUM' | 'FBP' | 'CLUSTER_HEAD' | 'LEGAL_GM' | 'LEGAL_OFFICER';
+type UserRole = 'INITIATOR' | 'BUM' | 'FBP' | 'CLUSTER_HEAD' | 'LEGAL_GM' | 'LEGAL_OFFICER' | 'CEO';
 type ApprovalFilter = 'PENDING' | 'APPROVED' | 'MY_REJECTIONS' | 'OTHER_REJECTIONS' | 'ALL';
 type SubmissionFilter = 'ALL' | 'APPROVAL_PENDING' | 'ONGOING' | 'COMPLETED' | 'RESUBMIT' | 'CANCELLED' | 'DRAFT' | 'RESUBMITTED';
 
@@ -73,7 +73,7 @@ function formatDate(iso: string) {
 function getRoleLabel(role: UserRole): string {
   const map: Record<UserRole, string> = {
     INITIATOR: 'Initiator', BUM: 'BUM', FBP: 'FBP',
-    CLUSTER_HEAD: 'Cluster Head', LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer',
+    CLUSTER_HEAD: 'Cluster Head', LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer', CEO: 'CEO',
   };
   return map[role];
 }
@@ -391,6 +391,7 @@ export default function HomePage() {
               const route =
                 currentRole === 'LEGAL_OFFICER' ? `/form${s.formId}/legal-officer?id=${s.id}` :
                 currentRole === 'LEGAL_GM'       ? `/form${s.formId}/legal-gm?id=${s.id}` :
+                currentRole === 'CEO'           ? `/form${s.formId}/ceo?id=${s.id}` :
                                                    `/form${s.formId}/approval?id=${s.id}`;
 
               return {
@@ -429,6 +430,7 @@ export default function HomePage() {
               route:
                 currentRole === 'LEGAL_OFFICER' ? `/form${s.formId}/legal-officer?id=${s.id}` :
                 currentRole === 'LEGAL_GM'       ? `/form${s.formId}/legal-gm?id=${s.id}` :
+                currentRole === 'CEO'           ? `/form${s.formId}/ceo?id=${s.id}` :
                                                    `/form${s.formId}/approval?id=${s.id}`,
             }))
           );

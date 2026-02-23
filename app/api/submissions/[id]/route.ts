@@ -27,10 +27,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const body = await req.json();
-    const { status, loStage, legalGmStage, assignedLegalOfficer, documentId, fileUrl, documentStatus,
+    const { status, loStage, legalGmStage, assignedLegalOfficer, documentId, fileUrl, documentStatus, scopeOfAgreement,
       ouLegalReviewCompleted, ouRegisteredDate, ouLegalRefNumber, ouDateOfExecution, ouDateOfExpiration,
       ouDirectorsExecuted1, ouDirectorsExecuted2, ouConsideration, ouReviewedBy, ouRegisteredBy,
-      ouSignedSupplierCode, ouRemarks, ouSavedAt, financeViewedAt } = body;
+      ouSignedSupplierCode, ouRemarks, ouSavedAt, financeViewedAt,
+      f2StampDuty, f2LegalFees, f2ReferenceNo, f2BoardApproval, f2Remarks } = body;
     // ── Update a single document's fileUrl ──
     if (documentId && fileUrl) {
       const updatedDoc = await prisma.submissionDocument.update({
@@ -54,6 +55,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const updated = await prisma.submission.update({
       where: { id: (await params).id },
       data: {
+        ...(scopeOfAgreement !== undefined && { scopeOfAgreement }),
         ...(status && { status }),
         ...(loStage && { loStage }),
         ...(legalGmStage && { legalGmStage }),
@@ -72,6 +74,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(ouRemarks !== undefined && { ouRemarks }),
         ...(ouSavedAt !== undefined && { ouSavedAt }),
         ...(financeViewedAt !== undefined && { financeViewedAt: new Date(financeViewedAt) }),
+        ...(f2StampDuty !== undefined && { f2StampDuty }),
+        ...(f2LegalFees !== undefined && { f2LegalFees }),
+        ...(f2ReferenceNo !== undefined && { f2ReferenceNo }),
+        ...(f2BoardApproval !== undefined && { f2BoardApproval }),
+        ...(f2Remarks !== undefined && { f2Remarks }),
         updatedAt: new Date(),
       },
       include: { parties: true, approvals: true, documents: true, comments: true, specialApprovers: true },

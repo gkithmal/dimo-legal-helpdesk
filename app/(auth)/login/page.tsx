@@ -34,6 +34,7 @@ export default function LoginPage() {
     { label: 'Legal Officer', email: 'sandalie.gomes@testdimo.com' },
     { label: 'Legal GM',      email: 'dinali.guru@testdimo.com' },
     { label: 'Spec. Approver', email: 'special.approver@testdimo.com' },
+    { label: 'CEO',            email: 'ceo@testdimo.com' },
     { label: 'Finance',        email: 'finance.team@testdimo.com' },
   ];
 

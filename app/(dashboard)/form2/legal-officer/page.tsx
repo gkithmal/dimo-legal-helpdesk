@@ -1,10 +1,12 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
+import NotificationBell from '@/components/shared/NotificationBell';
 import { ROUTES } from '@/lib/routes';
 import {
-  Home, Bell, Lightbulb, Search, Settings, User,
+  LogOut, Home, Lightbulb, Search, Settings, User,
   ArrowLeft, CheckCircle2, FileText, Clock, XCircle,
   RotateCcw, Send, Paperclip, Plus, ChevronDown, Eye,
   AlertCircle, Upload, X, Calendar, Loader2,
@@ -15,8 +17,8 @@ import {
 type LOStage = 'PENDING_GM' | 'REASSIGNED' | 'ACTIVE' | 'POST_GM_APPROVAL';
 type DocStatus = 'NONE' | 'OK' | 'ATTENTION' | 'RESUBMIT';
 
-type RequiredDoc = { id: string; label: string; status: DocStatus; hasFile: boolean; comment?: string };
-type PreparedDoc = { id: string; name: string; type: 'initial' | 'final' };
+type RequiredDoc = { id: string; label: string; status: DocStatus; hasFile: boolean; fileUrl?: string | null; comment?: string };
+type PreparedDoc = { id: string; name: string; type: 'initial' | 'final'; fileUrl?: string | null };
 type SpecialApprover = { id: string; department: string; email: string };
 type CommentEntry = { id: number; author: string; role: string; avatar: string; text: string; time: string; side: 'left' | 'right' };
 
@@ -39,7 +41,7 @@ type Submission = {
   assignedLegalOfficer?: string;
   parties: Party[];
   approvals: ApproverRecord[];
-  documents: { id: string; label: string; type: string; status: string; fileUrl?: string | null }[];
+  documents: { id: string; label: string; type: string; status: string; fileUrl?: string | null; comment?: string | null }[];
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -121,12 +123,15 @@ function AttachmentPreviewPage({ doc, canAct, onSave, onBack }: {
             <span className="text-sm font-bold text-[#17293E] flex-1 truncate">{doc.label}</span>
             {doc.status !== 'NONE' && <DocStatusIcon status={doc.status} />}
           </div>
-          <div className="flex-1 flex items-center justify-center bg-slate-50">
-            <div className="text-center">
-              <FileText className="w-16 h-16 text-slate-200 mx-auto mb-3" />
-              <p className="text-sm font-medium text-slate-400">PDF Preview</p>
-              <p className="text-xs text-slate-300 mt-1">PDF preview would render here</p>
-            </div>
+          <div className="flex-1 overflow-hidden">
+            {doc.fileUrl ? (
+              <iframe src={doc.fileUrl} className="w-full h-full border-0" title={doc.label} />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-3 bg-slate-50">
+                <FileText className="w-16 h-16 text-slate-200" />
+                <p className="text-sm font-medium text-slate-400">No file attached</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -136,14 +141,8 @@ function AttachmentPreviewPage({ doc, canAct, onSave, onBack }: {
             <div className="px-4 py-3 border-b border-slate-100" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
               <span className="text-white font-bold text-sm">Attachments</span>
             </div>
-            <div className="p-4 flex justify-center">
-              <div className="text-center">
-                <div className="w-16 h-20 bg-red-50 border-2 border-red-200 rounded-xl flex flex-col items-center justify-center mx-auto mb-2">
-                  <FileText className="w-8 h-8 text-red-500 mb-1" />
-                  <span className="text-[9px] font-bold text-red-600 uppercase">PDF</span>
-                </div>
-                <p className="text-[11px] text-slate-600 font-medium">{doc.label.replace('(latest form)', '').trim()} new(1).pdf</p>
-              </div>
+            <div className="p-4">
+              <p className="text-[11px] text-slate-500 italic text-center">Use the preview panel to view the file.</p>
             </div>
             {canAct && (
               <div className="px-4 pb-4">
@@ -256,9 +255,26 @@ function ConfirmModal({ title, message, confirmLabel, confirmColor, requireComme
   );
 }
 
-function RequestMoreDocsModal({ onClose }: { onClose: () => void }) {
+function RequestMoreDocsModal({ onClose, submissionId }: { onClose: () => void; submissionId: string }) {
   const [sent, setSent] = useState(false);
+  const [sending, setSending] = useState(false);
   const [note, setNote] = useState('');
+
+  async function handleSend() {
+    if (!note.trim()) return;
+    setSending(true);
+    try {
+      await fetch(`/api/submissions/${submissionId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ label: note.trim(), type: 'LO_REQUESTED' }),
+      });
+      setSent(true);
+    } finally {
+      setSending(false);
+    }
+  }
+
   if (sent) return <SuccessModal title="Request Sent!" message="The initiator has been notified to upload additional documents." onClose={onClose} />;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -275,28 +291,40 @@ function RequestMoreDocsModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="flex gap-3 px-6 pb-5">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
-          <button disabled={!note.trim()} onClick={() => setSent(true)}
-            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white disabled:opacity-50"
-            style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>Send Request</button>
+          <button disabled={!note.trim() || sending} onClick={handleSend}
+            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
+            {sending && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
+            Send Request
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-function SpecialApprovalsModal({ existing, onSave, onClose }: {
+function SpecialApprovalsModal({ existing, onSave, onClose, availableApprovers }: {
   existing: SpecialApprover[]; onSave: (a: SpecialApprover[]) => void; onClose: () => void;
+  availableApprovers: { id: string; name: string; email: string; department: string }[];
 }) {
   const [approvers, setApprovers] = useState<SpecialApprover[]>(existing);
   const [showAdd, setShowAdd]     = useState(false);
   const [newDept, setNewDept]     = useState('');
   const [newEmail, setNewEmail]   = useState('');
 
+  // Build dept -> emails map dynamically from DB users
+  const deptMap: Record<string, string[]> = {};
+  availableApprovers.forEach((u) => {
+    if (!deptMap[u.department]) deptMap[u.department] = [];
+    if (!deptMap[u.department].includes(u.email)) deptMap[u.department].push(u.email);
+  });
+  const departments = Object.keys(deptMap);
+
   const toggle = (dept: string) => {
     if (approvers.find((a) => a.department === dept)) {
       setApprovers((prev) => prev.filter((a) => a.department !== dept));
     } else {
-      setApprovers((prev) => [...prev, { id: Date.now().toString(), department: dept, email: DEPT_APPROVERS[dept]?.[0] || '' }]);
+      setApprovers((prev) => [...prev, { id: Date.now().toString(), department: dept, email: deptMap[dept]?.[0] || '' }]);
     }
   };
 
@@ -309,7 +337,7 @@ function SpecialApprovalsModal({ existing, onSave, onClose }: {
           <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/15 flex items-center justify-center text-white"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5 space-y-2 max-h-80 overflow-y-auto">
-          {DEPARTMENTS.map((dept) => {
+          {departments.map((dept) => {
             const sel = approvers.find((a) => a.department === dept);
             return (
               <div key={dept} className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 border transition-all ${sel ? 'bg-[#EEF3F8] border-[#1A438A]/30' : 'bg-slate-50 border-slate-200'}`}>
@@ -319,7 +347,7 @@ function SpecialApprovalsModal({ existing, onSave, onClose }: {
                   <select value={sel.email}
                     onChange={(e) => setApprovers((prev) => prev.map((a) => a.department === dept ? { ...a, email: e.target.value } : a))}
                     className="text-xs bg-white border border-[#1A438A]/30 rounded-lg px-2 py-1.5 text-[#1A438A] focus:outline-none appearance-none max-w-[180px]">
-                    {(DEPT_APPROVERS[dept] || []).map((e) => <option key={e} value={e}>{e}</option>)}
+                    {(deptMap[dept] || []).map((e) => <option key={e} value={e}>{e}</option>)}
                   </select>
                 )}
               </div>
@@ -351,9 +379,29 @@ function SpecialApprovalsModal({ existing, onSave, onClose }: {
   );
 }
 
-function AddDocumentModal({ onAdd, onClose }: { onAdd: (name: string, type: 'initial' | 'final') => void; onClose: () => void }) {
+
+function AddDocumentModal({ onAdd, onClose }: { onAdd: (name: string, type: 'initial' | 'final', file?: File) => Promise<void>; onClose: () => void }) {
   const [name, setName] = useState('');
   const [type, setType] = useState<'initial' | 'final'>('initial');
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState('');
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const handleAdd = async () => {
+    if (!name.trim()) return;
+    setError('');
+    setUploading(true);
+    try {
+      await onAdd(name, type, file || undefined);
+      onClose();
+    } catch {
+      setError('Failed to add document. Please try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
@@ -379,35 +427,218 @@ function AddDocumentModal({ onAdd, onClose }: { onAdd: (name: string, type: 'ini
               ))}
             </div>
           </div>
-          <div className="border-2 border-dashed border-slate-200 rounded-xl p-4 text-center hover:border-[#1A438A]/40 transition-colors cursor-pointer">
-            <Upload className="w-6 h-6 mx-auto mb-2 text-slate-300" />
-            <p className="text-xs text-slate-400">Click to upload PDF</p>
+          <input ref={fileRef} type="file" accept=".pdf,.doc,.docx,.png,.jpg" className="hidden"
+            onChange={(e) => { const f = e.target.files?.[0]; if (f) setFile(f); }} />
+          <div onClick={() => fileRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-4 text-center cursor-pointer transition-colors
+              ${file ? 'border-emerald-400 bg-emerald-50' : 'border-slate-200 hover:border-[#1A438A]/40'}`}>
+            {file ? (
+              <div className="flex items-center justify-center gap-2">
+                <FileText className="w-5 h-5 text-emerald-500" />
+                <span className="text-sm font-semibold text-emerald-700 truncate max-w-[200px]">{file.name}</span>
+                <button onClick={(e) => { e.stopPropagation(); setFile(null); }} className="text-slate-400 hover:text-red-500">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <>
+                <Upload className="w-6 h-6 mx-auto mb-2 text-slate-300" />
+                <p className="text-xs text-slate-400">Click to upload file <span className="text-slate-300">(optional)</span></p>
+              </>
+            )}
           </div>
+          {error && <p className="text-xs text-red-500 font-medium">{error}</p>}
         </div>
         <div className="flex gap-3 px-6 pb-5">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600">Cancel</button>
-          <button disabled={!name.trim()} onClick={() => { onAdd(name, type); onClose(); }}
-            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white disabled:opacity-50"
-            style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>ADD</button>
+          <button disabled={!name.trim() || uploading} onClick={handleAdd}
+            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>
+            {uploading ? <><Loader2 className="w-4 h-4 animate-spin" />Uploading...</> : 'ADD'}
+          </button>
         </div>
       </div>
     </div>
   );
 }
 
-function OfficialUseModal({ submissionNo, onClose, onComplete }: {
-  submissionNo: string; onClose: () => void; onComplete: () => void;
+function Form2FinalizationModal({ submissionNo, submissionId, onClose, onComplete }: {
+  submissionNo: string; submissionId: string; onClose: () => void; onComplete: () => void;
 }) {
-  const [fields, setFields] = useState<Record<string, string>>({ dateOfExpiration: 'indefinite' });
+  const [stampDuty, setStampDuty] = useState('');
+  const [legalFees, setLegalFees] = useState('');
+  const [referenceNo, setReferenceNo] = useState('');
+  const [boardApproval, setBoardApproval] = useState<'yes' | 'no' | ''>('');
+  const [remarks, setRemarks] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [showDone, setShowDone] = useState(false);
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    await fetch(`/api/submissions/${submissionId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ f2StampDuty: stampDuty, f2LegalFees: legalFees, f2ReferenceNo: referenceNo, f2BoardApproval: boardApproval, f2Remarks: remarks }),
+    });
+    setIsSaving(false);
+    onClose();
+  };
+
+  const handleComplete = async () => {
+    if (!stampDuty || !legalFees || !referenceNo || !boardApproval) return;
+    setIsCompleting(true);
+    await fetch(`/api/submissions/${submissionId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ f2StampDuty: stampDuty, f2LegalFees: legalFees, f2ReferenceNo: referenceNo, f2BoardApproval: boardApproval, f2Remarks: remarks }),
+    });
+    await fetch(`/api/submissions/${submissionId}/approve`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: 'LEGAL_OFFICER', action: 'COMPLETED' }),
+    });
+    setIsCompleting(false);
+    setShowDone(true);
+  };
+
+  if (showDone) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center text-center">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 shadow-lg shadow-green-500/30"
+          style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+          <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 className="text-[#17293E] text-xl font-bold mb-2">Lease Agreement Complete!</h2>
+        <p className="text-slate-500 text-sm mb-4">The lease agreement process has been fully completed.</p>
+        <div className="w-full bg-[#f0f4f9] rounded-xl px-6 py-3 mb-6">
+          <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">Submission No.</p>
+          <p className="text-[#1A438A] font-bold text-lg font-mono">{submissionNo}</p>
+        </div>
+        <button onClick={onComplete} className="w-full py-3 rounded-xl font-bold text-white"
+          style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>Return to Home</button>
+      </div>
+    </div>
+  );
+
+  const isValid = !!(stampDuty && legalFees && referenceNo && boardApproval);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh]">
+        <div className="flex items-center justify-between px-6 py-4 flex-shrink-0"
+          style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
+          <div>
+            <span className="text-white font-bold text-base">Legal Review Completion</span>
+            <p className="text-white/60 text-[11px] mt-0.5 font-mono">{submissionNo}</p>
+          </div>
+          <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-6 space-y-4 overflow-y-auto flex-1">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Stamp Duty Rs. <span className="text-red-400">*</span></label>
+              <input type="number" value={stampDuty} onChange={e => setStampDuty(e.target.value)} placeholder="e.g. 25000"
+                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10" />
+            </div>
+            <div>
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Legal Fees Rs. <span className="text-red-400">*</span></label>
+              <input type="number" value={legalFees} onChange={e => setLegalFees(e.target.value)} placeholder="e.g. 15000"
+                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10" />
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Reference Number <span className="text-red-400">*</span></label>
+            <input type="text" value={referenceNo} onChange={e => setReferenceNo(e.target.value)} placeholder="e.g. LHD-REF-2026-001"
+              className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10" />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Board Approval Obtained <span className="text-red-400">*</span></label>
+            <div className="flex items-center gap-6 mt-1">
+              {(["yes", "no"] as const).map((v) => (
+                <label key={v} className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={boardApproval === v} onChange={() => setBoardApproval(boardApproval === v ? "" : v)} className="w-4 h-4 accent-[#1A438A]" />
+                  <span className="text-sm text-slate-700 capitalize font-medium">{v}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Remarks</label>
+            <textarea value={remarks} onChange={e => setRemarks(e.target.value)} rows={3} placeholder="Optional remarks..."
+              className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10" />
+          </div>
+          {!isValid && (
+            <div className="flex items-center gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+              <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+              <p className="text-[11px] text-amber-700">Fill all required fields to complete the process.</p>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-3 px-6 py-4 border-t border-slate-100 flex-shrink-0">
+          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">Back</button>
+          <button onClick={handleSave} disabled={isSaving} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white disabled:opacity-60"
+            style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
+            {isSaving ? 'Saving...' : 'Save & Close'}
+          </button>
+          <button onClick={handleComplete} disabled={!isValid || isCompleting} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white disabled:opacity-50"
+            style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+            {isCompleting ? 'Completing...' : 'Job Completion'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, initialFields }: {
+  submissionNo: string; submissionId: string; onClose: () => void; onComplete: () => void;
+  initialFields?: Record<string, string>;
+}) {
+  const [fields, setFields] = useState<Record<string, string>>(initialFields || { dateOfExpiration: 'indefinite' });
   const [modal, setModal]   = useState<'saveConfirm' | 'jobConfirm' | 'saveSuccess' | 'jobSuccess' | null>(null);
   const [loading, setLoading] = useState(false);
+  const [validationError, setValidationError] = useState('');
 
   const set = (k: string, v: string) => setFields((p) => ({ ...p, [k]: v }));
+
+  const REQUIRED_FIELDS = ['registeredDate','legalRefNumber','dateOfExecution','reviewedBy','registeredBy'];
+  const FIELD_LABELS: Record<string,string> = {
+    registeredDate: 'Registered Date', legalRefNumber: 'Legal Dept Reference Number',
+    dateOfExecution: 'Date of Execution', reviewedBy: 'Reviewed for Registration By',
+    registeredBy: 'Registered By',
+  };
+
+  const saveToDb = async (extraData?: Record<string,unknown>) => {
+    await fetch(`/api/submissions/${submissionId}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ouLegalReviewCompleted: !!fields.legalReviewCompleted,
+        ouRegisteredDate: fields.registeredDate || null,
+        ouLegalRefNumber: fields.legalRefNumber || null,
+        ouDateOfExecution: fields.dateOfExecution || null,
+        ouDateOfExpiration: fields.dateOfExpiration || null,
+        ouDirectorsExecuted1: fields.directorsExecuted1 || null,
+        ouDirectorsExecuted2: fields.directorsExecuted2 || null,
+        ouConsideration: fields.consideration || null,
+        ouReviewedBy: fields.reviewedBy || null,
+        ouRegisteredBy: fields.registeredBy || null,
+        ouSignedSupplierCode: fields.signedSupplierCode || null,
+        ouRemarks: fields.remarks || null,
+        ouSavedAt: new Date().toISOString(),
+        ...extraData,
+      }),
+    });
+  };
 
   if (modal === 'saveConfirm') return (
     <ConfirmModal title="Save without completing the job?" message="" confirmLabel="Yes"
       confirmColor="linear-gradient(135deg, #1A438A, #1e5aad)"
-      onConfirm={() => setModal('saveSuccess')} onClose={() => setModal(null)} loading={loading} />
+      onConfirm={async () => { setLoading(true); await saveToDb(); setLoading(false); setModal('saveSuccess'); }}
+      onClose={() => setModal(null)} loading={loading} />
   );
   if (modal === 'jobConfirm') return (
     <ConfirmModal title="Complete this request?" message="Initiator will be notified. This action cannot be undone."
@@ -543,10 +774,21 @@ function OfficialUseModal({ submissionNo, onClose, onComplete }: {
             </div>
           </div>
         </div>
+        {validationError && (
+          <div className="mx-6 mb-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 font-medium">{validationError}</div>
+        )}
         <div className="flex gap-3 px-6 pb-5 pt-3 border-t border-slate-100">
           <button onClick={onClose} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-[#17293E] text-[#17293E] hover:bg-[#17293E] hover:text-white transition-all">Back</button>
           <button onClick={() => setModal('saveConfirm')} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>Save and Close</button>
-          <button onClick={() => setModal('jobConfirm')} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>Job Completion</button>
+          <button onClick={() => {
+            const missing = REQUIRED_FIELDS.filter(f => !fields[f]);
+            if (missing.length > 0) {
+              setValidationError('Please fill in: ' + missing.map(f => FIELD_LABELS[f]).join(', '));
+              return;
+            }
+            setValidationError('');
+            setModal('jobConfirm');
+          }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>Job Completion</button>
         </div>
       </div>
     </div>
@@ -555,8 +797,10 @@ function OfficialUseModal({ submissionNo, onClose, onComplete }: {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-export default function Form1LegalOfficerPage() {
+function LegalOfficerPageContent() {
   const router = useRouter();
+  const [showSignOut, setShowSignOut] = useState(false);
+  const { data: session } = useSession();
   const searchParams = useSearchParams();
   const submissionId = searchParams.get('id');
 
@@ -571,17 +815,30 @@ export default function Form1LegalOfficerPage() {
   const [docs, setDocs]               = useState<RequiredDoc[]>([]);
   const [preparedDocs, setPreparedDocs] = useState<PreparedDoc[]>([]);
   const [specialApprovers, setSpecialApprovers] = useState<SpecialApprover[]>([]);
+  const [availableSpecialApprovers, setAvailableSpecialApprovers] = useState<{ id: string; name: string; email: string; department: string }[]>([]);
+  useEffect(() => {
+    fetch('/api/users')
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) setAvailableSpecialApprovers(
+          d.data.filter((u: any) => u.role === 'SPECIAL_APPROVER' && u.isActive && u.department)
+                .map((u: any) => ({ id: u.id, name: u.name, email: u.email, department: u.department }))
+        );
+      }).catch(() => {});
+  }, []);
+  const [showSpecial, setShowSpecial] = useState(false);
   const [comments, setComments]       = useState<CommentEntry[]>([]);
   const [commentInput, setCommentInput] = useState('');
 
   // ── UI state ──
   const [viewingDoc, setViewingDoc]   = useState<RequiredDoc | null>(null);
   const [showMoreDocs, setShowMoreDocs] = useState(false);
-  const [showSpecial, setShowSpecial] = useState(false);
   const [showAddDoc, setShowAddDoc]   = useState(false);
   const [showOfficialUse, setShowOfficialUse] = useState(false);
-  const [confirmModal, setConfirmModal] = useState<'cancel' | 'submit' | 'reassign' | null>(null);
-  const [successModal, setSuccessModal] = useState<'sent' | 'cancelled' | 'accepted' | null>(null);
+  const [confirmModal, setConfirmModal] = useState<'cancel' | 'submit' | 'reassign' | 'special' | 'return' | null>(null);
+  const [specialEmail, setSpecialEmail] = useState('');
+  const [specialName, setSpecialName] = useState('');
+  const [successModal, setSuccessModal] = useState<'sent' | 'cancelled' | 'returned' | 'accepted' | null>(null);
 
   // ── Load submission ──
   const loadSubmission = useCallback(async () => {
@@ -594,13 +851,27 @@ export default function Form1LegalOfficerPage() {
       setSubmission(s);
 
       // Map DB documents → local RequiredDoc shape
-      setDocs(s.documents.map((d) => ({
+      const partyTypes = s.parties.map((p: Party) => p.type);
+      const filteredDocs = s.documents.filter((d) =>
+        partyTypes.includes(d.type) || (d.type === 'Common' && partyTypes.some((t: string) => t !== 'Individual'))
+      );
+      setDocs(filteredDocs.map((d) => ({
         id: d.id,
         label: d.label,
-        status: 'NONE' as DocStatus,
+        status: (d.status && d.status !== 'NONE' ? d.status : 'NONE') as DocStatus,
         hasFile: !!d.fileUrl,
+        fileUrl: d.fileUrl ?? null,
+        comment: d.comment ?? '',
       })));
 
+      // Load LO prepared documents
+      const loDocs = s.documents.filter((d: any) => d.type?.startsWith('LO_PREPARED'));
+      setPreparedDocs(loDocs.map((d: any) => ({
+        id: d.id,
+        name: d.label,
+        type: d.type === 'LO_PREPARED_FINAL' ? 'final' : 'initial',
+        fileUrl: d.fileUrl ?? null,
+      })));
       // Seed initiator comment if present
       if (s.initiatorComments) {
         setComments([{
@@ -618,7 +889,7 @@ export default function Form1LegalOfficerPage() {
   useEffect(() => { loadSubmission(); }, [loadSubmission]);
 
   // ── API call ──
-  const callApproveAPI = async (action: 'SUBMIT_TO_LEGAL_GM' | 'COMPLETED' | 'CANCELLED', comment?: string) => {
+  const callApproveAPI = async (action: 'SUBMIT_TO_LEGAL_GM' | 'COMPLETED' | 'CANCELLED' | 'RETURNED_TO_INITIATOR', comment?: string) => {
     if (!submissionId) return;
     setIsActing(true);
     setApiError('');
@@ -630,8 +901,8 @@ export default function Form1LegalOfficerPage() {
           role: 'LEGAL_OFFICER',
           action,
           comment: comment || null,
-          approverName: submission?.assignedLegalOfficer || 'Sandalie Gomes',
-          approverEmail: 'sandalie.gomes@dimolanka.com',
+          approverName: session?.user?.name || submission?.assignedLegalOfficer || '',
+          approverEmail: session?.user?.email || '',
         }),
       });
       const data = await res.json();
@@ -656,12 +927,73 @@ export default function Form1LegalOfficerPage() {
     catch { /* apiError set inside */ }
   };
 
-  const handleComplete = async () => {
-    await callApproveAPI('COMPLETED');
+  const handleReturnToInitiator = async (comment: string) => {
+    if (!submissionId) return;
+    setIsActing(true);
+    setApiError('');
+    try {
+      const res = await fetch(`/api/submissions/${submissionId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: 'LEGAL_OFFICER',
+          action: 'RETURNED_TO_INITIATOR',
+          comment,
+          approverName: session?.user?.name || submission?.assignedLegalOfficer || '',
+          approverEmail: session?.user?.email || '',
+          docStatuses: docs.map((d) => ({ id: d.id, status: d.status, comment: d.comment || '' })),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Action failed');
+      setConfirmModal(null);
+      setSuccessModal('returned');
+    } catch (err: unknown) {
+      setApiError(err instanceof Error ? err.message : 'Action failed. Please try again.');
+    } finally {
+      setIsActing(false);
+    }
   };
 
-  const updateDocStatus = (id: string, status: DocStatus, comment: string) => {
+  const handleSendToSpecialApprover = async (email: string, name: string) => {
+    if (!submissionId) return;
+    setIsActing(true);
+    try {
+      const res = await fetch(`/api/submissions/${submissionId}/approve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: 'LEGAL_OFFICER', action: 'ASSIGN_SPECIAL_APPROVER', specialApproverEmail: email, specialApproverName: name, approverName: session?.user?.name || '', approverEmail: session?.user?.email || '' }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.error || 'Failed');
+      setSubmission(data.data);
+      setConfirmModal(null);
+      setSuccessModal('sent');
+    } catch (err: unknown) {
+      setApiError(err instanceof Error ? err.message : 'Failed');
+    } finally {
+      setIsActing(false);
+    }
+  };
+
+  const handleComplete = async () => {
+    if (submission?.status === 'COMPLETED') return;
+    setShowOfficialUse(false);
+    await callApproveAPI('COMPLETED');
+    router.push(ROUTES.HOME);
+  };
+
+  const updateDocStatus = async (id: string, status: DocStatus, comment: string) => {
     setDocs((prev) => prev.map((d) => d.id === id ? { ...d, status, comment } : d));
+    if (submissionId) {
+      try {
+        await fetch(`/api/submissions/${submissionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ documentId: id, documentStatus: status, documentComment: comment }),
+        });
+      } catch (err) { console.error('Failed to save doc status:', err); }
+    }
   };
 
   const postCommentToAPI = async (text: string) => {
@@ -733,29 +1065,50 @@ export default function Form1LegalOfficerPage() {
         style={{ background: 'linear-gradient(180deg, #1A438A 0%, #17293E 100%)' }}>
         <div className="relative mb-1">
           <div className="w-11 h-11 rounded-full bg-gradient-to-br from-pink-400 to-pink-600 flex items-center justify-center text-white font-bold text-base shadow-lg shadow-black/30">
-            {(submission.assignedLegalOfficer || 'S').charAt(0)}
+            {(session?.user?.name || 'S').charAt(0)}
           </div>
           <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-[#1A438A]" />
         </div>
         <div className="text-center">
-          <p className="text-white text-[10px] font-semibold">{(submission.assignedLegalOfficer || 'Legal Officer').split(' ')[0]}</p>
-          <p className="text-white/40 text-[9px]">{(submission.assignedLegalOfficer || '').split(' ')[1] || ''}</p>
+          <p className="text-white text-[10px] font-semibold">{(session?.user?.name || 'Legal Officer').split(' ')[0]}</p>
+          <p className="text-white/40 text-[9px]">{(session?.user?.name || '').split(' ')[1] || ''}</p>
         </div>
         <div className="w-8 h-px bg-white/10" />
         <nav className="flex flex-col items-center gap-1 flex-1 w-full px-2">
-          {[Home, Bell, Lightbulb, Search].map((Icon, i) => (
-            <button key={i} className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
-              <Icon className="w-[18px] h-[18px]" />
-              {i === 1 && <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-red-500 rounded-full text-[9px] flex items-center justify-center text-white font-bold">3</span>}
-            </button>
-          ))}
+          <NotificationBell />
+          <button onClick={() => router.push(ROUTES.HOME)} className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all" title="Home">
+            <Home className="w-[18px] h-[18px]" />
+          </button>
+          <button className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
+            <Lightbulb className="w-[18px] h-[18px]" />
+          </button>
+          <button className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
+            <Search className="w-[18px] h-[18px]" />
+          </button>
         </nav>
         <div className="flex flex-col items-center gap-1 w-full px-2 mb-2">
-          {[Settings, User].map((Icon, i) => (
-            <button key={i} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all">
-              <Icon className="w-[18px] h-[18px]" />
-            </button>
-          ))}
+          <button className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all">
+            <Settings className="w-[18px] h-[18px]" />
+          </button>
+          <button onClick={() => setShowSignOut(true)} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all" title="Sign Out">
+            <User className="w-[18px] h-[18px]" />
+          </button>
+        {showSignOut && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSignOut(false)} />
+            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xs p-7 flex flex-col items-center text-center">
+              <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center mb-4">
+                <LogOut className="w-7 h-7 text-red-500" />
+              </div>
+              <h3 className="text-[#17293E] font-bold text-base mb-1">Sign Out?</h3>
+              <p className="text-slate-500 text-sm mb-6">You will be redirected to the login page.</p>
+              <div className="flex gap-3 w-full">
+                <button onClick={() => setShowSignOut(false)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
+                <button onClick={() => { setShowSignOut(false); router.push('/login'); }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>Sign Out</button>
+              </div>
+            </div>
+          </div>
+        )}
         </div>
       </aside>
 
@@ -857,6 +1210,45 @@ export default function Form1LegalOfficerPage() {
             <p className="text-[#1A438A] font-bold text-sm font-mono">{submission.submissionNo}</p>
           </div>
 
+          {/* Workflow Stepper */}
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm px-4 py-3">
+            {(() => {
+                            const STEPS = [
+                { label: 'Form\nSubmission' }, { label: 'First Level\nApprovals' },
+                { label: 'CEO\nApproval' },
+  { label: 'Legal GM\nReview' }, { label: 'Legal Officer\nReview' },
+                { label: 'GM Final\nApproval' }, { label: 'Ready to\nCollect' },
+              ];
+              const activeStep = (() => {
+                if (submission.status === 'PENDING_LEGAL_GM') return 2;
+                if (submission.status === 'PENDING_LEGAL_OFFICER' && submission.loStage === 'ACTIVE') return 3;
+                if (submission.status === 'PENDING_SPECIAL_APPROVER') return 3;
+                if (submission.status === 'PENDING_LEGAL_GM_FINAL') return 4;
+                if (submission.status === 'PENDING_LEGAL_OFFICER' && submission.loStage === 'POST_GM_APPROVAL') return 5;
+                if (submission.status === 'COMPLETED') return 5;
+                return 1;
+              })();
+              return (
+                <div className="relative flex items-start justify-between">
+                  <div className="absolute top-[9px] left-0 right-0 h-[2px] bg-slate-200 z-0" />
+                  <div className="absolute top-[9px] left-0 h-[2px] bg-[#1A438A] z-0 transition-all"
+                    style={{ width: (activeStep as number) === 0 ? '0%' : `${(activeStep / (STEPS.length - 1)) * 100}%` }} />
+                  {STEPS.map((step, i) => (
+                    <div key={i} className="relative flex flex-col items-center z-10" style={{ width: `${100 / STEPS.length}%` }}>
+                      <div className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all
+                        ${i < activeStep ? 'bg-[#1A438A] border-[#1A438A]'
+                        : i === activeStep ? 'bg-[#1A438A] border-[#1A438A] ring-4 ring-[#1A438A]/15'
+                        : 'bg-white border-slate-300'}`}>
+                        {i < activeStep && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                        {i === activeStep && <div className="w-2 h-2 rounded-full bg-white" />}
+                      </div>
+                      <p className="text-[9px] text-center leading-tight whitespace-pre-line mt-1.5 text-slate-500 font-medium px-0.5">{step.label}</p>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
           {/* Required Documents */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
@@ -881,7 +1273,7 @@ export default function Form1LegalOfficerPage() {
                     <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}
                   </span>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    {doc.hasFile && <FileText className="w-3.5 h-3.5 text-slate-400" />}
+                    {doc.hasFile && <FileText className="w-3.5 h-3.5 text-slate-400 cursor-pointer hover:text-blue-500" onClick={() => setViewingDoc(docs.find(d => d.id === doc.id) ?? null)} />}
                     {doc.status !== 'NONE' ? <DocStatusIcon status={doc.status} /> : <Paperclip className="w-3.5 h-3.5 text-slate-300" />}
                   </div>
                 </button>
@@ -908,6 +1300,12 @@ export default function Form1LegalOfficerPage() {
                       <FileText className="w-3.5 h-3.5 text-[#1A438A]" />
                       <span className="text-[11px] font-semibold text-[#1A438A] flex-1 truncate">{pd.name}</span>
                       <span className="text-[9px] uppercase font-bold text-[#4686B7] bg-[#1A438A]/10 px-1.5 py-0.5 rounded">{pd.type}</span>
+                      {pd.fileUrl && (
+                        <button onClick={() => window.open(pd.fileUrl!, '_blank')}
+                          className="w-5 h-5 flex items-center justify-center rounded text-[#1A438A] hover:bg-[#1A438A]/20 transition-colors" title="View document">
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   ))
                 )}
@@ -917,12 +1315,12 @@ export default function Form1LegalOfficerPage() {
 
           {/* Approvals */}
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
               <div className="flex items-center gap-2">
                 <div className="w-0.5 h-4 rounded-full bg-[#1A438A]" />
                 <span className="text-[11px] font-bold uppercase tracking-widest text-[#17293E]">Approvals</span>
               </div>
-              {canAct && (
+              {canAct && loStage !== "POST_GM_APPROVAL" && (
                 <button onClick={() => setShowSpecial(true)}
                   className="text-[11px] font-bold px-3 py-1 rounded-full text-white transition-all active:scale-95"
                   style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>
@@ -935,7 +1333,7 @@ export default function Form1LegalOfficerPage() {
                 <div key={a.id} className="flex items-center justify-between py-2">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <span className="text-[11px] font-bold text-slate-600 w-20 flex-shrink-0">{ROLE_LABEL[a.role] ?? a.role}</span>
-                    <span className="text-[11px] text-slate-500 truncate">{a.approverEmail || a.approverName}</span>
+                    <span className="text-[11px] text-slate-500 truncate">{a.approverName || a.approverEmail}</span>
                   </div>
                   {a.status === 'APPROVED' && <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0 ml-2"><CheckCircle2 className="w-3 h-3 text-white" /></span>}
                   {a.status === 'PENDING'  && <span className="w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center flex-shrink-0 ml-2"><Clock className="w-3 h-3 text-white" /></span>}
@@ -1021,22 +1419,24 @@ export default function Form1LegalOfficerPage() {
               </div>
             )}
 
-            {loStage === 'ACTIVE' && (
-              <div className="flex gap-2">
-                <button onClick={() => router.push(ROUTES.HOME)} disabled={isActing}
-                  className="flex items-center gap-1.5 py-3 px-4 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all disabled:opacity-50">
-                  <ArrowLeft className="w-4 h-4" /> Back
-                </button>
-                <button onClick={() => setConfirmModal('cancel')} disabled={isActing}
-                  className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 shadow-lg shadow-red-500/20 disabled:opacity-70"
-                  style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>
-                  Cancel
-                </button>
+           {loStage === 'ACTIVE' && (
+              <div className="flex flex-col gap-2">
+                <div className="flex gap-2">
+                  <button onClick={() => router.push(ROUTES.HOME)} disabled={isActing}
+                    className="flex-1 py-3 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all disabled:opacity-50 flex items-center justify-center gap-1">
+                    <ArrowLeft className="w-4 h-4" /> Back
+                  </button>
+                  <button onClick={() => setConfirmModal('return')} disabled={isActing}
+                    className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
+                    style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>
+                    Return to Initiator
+                  </button>
+                </div>
                 <button onClick={() => setConfirmModal('submit')} disabled={isActing}
-                  className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 shadow-lg shadow-emerald-500/20 disabled:opacity-70 flex items-center justify-center gap-1"
-                  style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
-                  {isActing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit to Legal GM'}
-                </button>
+                    className="w-full py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70 flex items-center justify-center gap-1"
+                    style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+                    {isActing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit to GM'}
+                  </button>
               </div>
             )}
 
@@ -1065,20 +1465,106 @@ export default function Form1LegalOfficerPage() {
       </div>
 
       {/* ── Modals ── */}
-      {showMoreDocs && <RequestMoreDocsModal onClose={() => setShowMoreDocs(false)} />}
-      {showSpecial  && <SpecialApprovalsModal existing={specialApprovers} onSave={setSpecialApprovers} onClose={() => setShowSpecial(false)} />}
-      {showAddDoc   && <AddDocumentModal onAdd={(name, type) => setPreparedDocs((p) => [...p, { id: Date.now().toString(), name, type }])} onClose={() => setShowAddDoc(false)} />}
-      {showOfficialUse && <OfficialUseModal submissionNo={submission.submissionNo} onClose={() => setShowOfficialUse(false)} onComplete={handleComplete} />}
+      {showMoreDocs && <RequestMoreDocsModal onClose={() => setShowMoreDocs(false)} submissionId={submissionId!} />}
+      {showSpecial && <SpecialApprovalsModal
+        existing={specialApprovers}
+        availableApprovers={availableSpecialApprovers}
+        onSave={async (selected) => {
+          // Only call API for newly added approvers
+          const existing = specialApprovers.map(a => a.email);
+          const newOnes = selected.filter(a => !existing.includes(a.email));
+          setSpecialApprovers(selected);
+          setShowSpecial(false);
+          for (const a of newOnes) {
+            const user = availableSpecialApprovers.find(u => u.email === a.email);
+            await handleSendToSpecialApprover(a.email, user?.name || a.department);
+          }
+        }}
+        onClose={() => setShowSpecial(false)} />}
+      {showAddDoc   && <AddDocumentModal onAdd={async (name, type, file) => {
+        if (!submissionId) return;
+        // 1. Create DB record
+        const res = await fetch(`/api/submissions/${submissionId}`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ label: name, type: 'LO_PREPARED_' + type.toUpperCase() }),
+        });
+        const data = await res.json();
+        if (!data.success) return;
+        const docId = data.data.id;
+        // 2. Upload file if provided
+        let uploadedUrl: string | null = null;
+        if (file) {
+          const fd = new FormData();
+          fd.append('file', file);
+          fd.append('submissionId', submissionId);
+          const uploadRes = await fetch('/api/upload', { method: 'POST', body: fd });
+          const uploadData = await uploadRes.json();
+          if (uploadData.success && uploadData.url) {
+            uploadedUrl = uploadData.url;
+            await fetch(`/api/submissions/${submissionId}`, {
+              method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ documentId: docId, fileUrl: uploadData.url, documentStatus: 'UPLOADED' }),
+            });
+          }
+        }
+        setPreparedDocs((p) => [...p, { id: docId, name, type, fileUrl: uploadedUrl }]);
+      }} onClose={() => setShowAddDoc(false)} />}
+      {showOfficialUse && (
+        <Form2FinalizationModal
+          submissionNo={submission.submissionNo}
+          submissionId={submission.id}
+          onClose={() => setShowOfficialUse(false)}
+          onComplete={() => { setShowOfficialUse(false); router.push(ROUTES.HOME); }}
+        />
+      )}
 
-      {confirmModal === 'cancel' && (
-        <ConfirmModal title="Cancel this request?" message="The request will be cancelled and the initiator will be notified."
-          confirmLabel="Yes, Cancel" confirmColor="linear-gradient(135deg, #ef4444, #dc2626)" requireComment loading={isActing}
-          onConfirm={handleCancel} onClose={() => setConfirmModal(null)} />
+      {confirmModal === 'return' && (
+        <ConfirmModal title="Return to Initiator?" message="The submission will be sent back to the initiator with your document markings and comments. They will be able to fix and resubmit."
+          confirmLabel="Yes, Return" confirmColor="linear-gradient(135deg, #f59e0b, #d97706)" requireComment loading={isActing}
+          onConfirm={handleReturnToInitiator} onClose={() => setConfirmModal(null)} />
       )}
       {confirmModal === 'submit' && (
         <ConfirmModal title="Submit to Legal GM?" message="The request will be sent to Legal GM for final review and approval."
           confirmLabel="Yes, Submit" confirmColor="linear-gradient(135deg, #22c55e, #16a34a)" loading={isActing}
           onConfirm={handleSubmitToGM} onClose={() => setConfirmModal(null)} />
+      )}
+      {confirmModal === 'special' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setConfirmModal(null)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-4" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
+              <span className="text-white font-bold">Send to Special Approver</span>
+              <button onClick={() => setConfirmModal(null)} className="w-7 h-7 rounded-full bg-white/15 flex items-center justify-center text-white"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-5 space-y-3">
+              <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Select Approver</label>
+              {availableSpecialApprovers.map((u) => (
+                <div key={u.email}
+                  onClick={() => { setSpecialName(u.name); setSpecialEmail(u.email); }}
+                  className={`flex items-center gap-3 px-4 py-3 rounded-xl border-2 cursor-pointer transition-all ${specialEmail === u.email ? 'border-[#1A438A] bg-[#EEF3F8]' : 'border-slate-200 hover:border-[#1A438A]/40'}`}>
+                  <div className="w-9 h-9 rounded-full bg-[#1A438A] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                    {u.name.charAt(0)}
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-[#17293E]">{u.name}</p>
+                    <p className="text-[11px] text-slate-400">{u.email}</p>
+                  </div>
+                  {specialEmail === u.email && <CheckCircle2 className="w-5 h-5 text-[#1A438A] ml-auto" />}
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-3 px-6 pb-5">
+              <button onClick={() => setConfirmModal(null)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600">Cancel</button>
+              <button
+                disabled={!specialEmail.trim() || isActing}
+                onClick={() => handleSendToSpecialApprover(specialEmail, specialName)}
+                className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white disabled:opacity-50 flex items-center justify-center gap-2"
+                style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>
+                {isActing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Send'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
       {confirmModal === 'reassign' && (
         <ConfirmModal title="Accept Reassignment?" message="By accepting, you confirm that you will hand over all physical documents to the newly assigned Legal Officer."
@@ -1088,7 +1574,15 @@ export default function Form1LegalOfficerPage() {
 
       {successModal === 'sent'      && <SuccessModal title="Successfully sent!" message="Form has been sent for Legal GM's Approval." submissionNo={submission.submissionNo} onClose={() => { setSuccessModal(null); router.push(ROUTES.HOME); }} />}
       {successModal === 'cancelled' && <SuccessModal title="Cancelled!" message="The request has been cancelled." submissionNo={submission.submissionNo} onClose={() => { setSuccessModal(null); router.push(ROUTES.HOME); }} />}
+      {successModal === 'returned'  && <SuccessModal title="Returned to Initiator" message="The submission has been sent back to the initiator with your document markings and comments." submissionNo={submission.submissionNo} onClose={() => { setSuccessModal(null); router.push(ROUTES.HOME); }} />}
       {successModal === 'accepted'  && <SuccessModal title="Accepted!" message="Please make sure all the documents have been handed over to the assigned Legal Officer." onClose={() => { setSuccessModal(null); router.push(ROUTES.HOME); }} />}
     </div>
+  );
+}
+export default function LegalOfficerPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="text-gray-600">Loading...</div></div>}>
+      <LegalOfficerPageContent />
+    </Suspense>
   );
 }
