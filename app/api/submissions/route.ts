@@ -14,7 +14,7 @@ export async function GET(req: NextRequest) {
 
     const submissions = await prisma.submission.findMany({
       where: {
-        ...(status && { status }),
+        ...(status ? { status } : { status: { not: 'RESUBMITTED' } }),
         ...(initiatorId && { initiatorId }),
       },
       include: {
@@ -141,8 +141,55 @@ export async function POST(req: NextRequest) {
       const seen = new Set<string>();
       const documentsData: { label: string; type: string; status: string }[] = [];
 
-      if (formConfig?.docs?.length) {
-        // Use admin-configured docs: include party-specific + Common
+      if ((formId || 1) === 2) {
+        // ── Form 2: use full FORM2_DOCS_ALL list ──
+        const FORM2_DOCS_ALL = [
+          { label: "Offer Letter from the landowner and/or the Life Interest Holder", types: ["all"] },
+          { label: "Copy of the Title Deed of the property to be leased", types: ["all"] },
+          { label: "Copy of the Approved Survey Plan", types: ["all"] },
+          { label: "Copy of the Approved Building Plan", types: ["all"] },
+          { label: "Latest Street Line Certificate from Municipal Council/Urban Council/Pradeshiya Sabha", types: ["all"] },
+          { label: "Latest Building Line Certificate from Municipal Council/Urban Council/Pradeshiya Sabha", types: ["all"] },
+          { label: "Latest Non-Vesting Certificate from Municipal Council/Urban Council/Pradeshiya Sabha", types: ["all"] },
+          { label: "Certificate of Ownership from Municipal Council/Urban Council/Pradeshiya Sabha", types: ["all"] },
+          { label: "Last Municipal Tax payment receipt with a copy of latest Assessment Notice", types: ["all"] },
+          { label: "Certificate of Conformity (if there is a building)", types: ["all"] },
+          { label: "Declaration that premises are not vested or subject of any notice of acquisition", types: ["all"] },
+          { label: "Plan of the building/area to be leased with parking areas", types: ["all"] },
+          { label: "Copy of any Mortgage on property (if no Mortgage, confirmation to that effect)", types: ["all"] },
+          { label: "If loans outstanding — Copy of Loan Agreement with lending authority", types: ["all"] },
+          { label: "Letter of Acceptance", types: ["all"] },
+          { label: "Extracts from Land Registry for past 30 years", types: ["all"] },
+          { label: "Last receipt of Water and Electricity bills paid", types: ["all"] },
+          { label: "Copy of National Identity Card/Cards", types: ["all"] },
+          { label: "If owner living abroad — copy of Passport and Power of Attorney", types: ["all"] },
+          { label: "Copy of Fire Certificate (for Buildings)", types: ["all"] },
+          { label: "Inventory", types: ["all"] },
+          { label: "Lessor VAT Registration No (If applicable)", types: ["all"] },
+          { label: "Confirmation from Facilities Manager regarding existing buildings", types: ["all"] },
+          { label: "Memorandum and Article of Association", types: ["Company"] },
+          { label: "Board Resolution", types: ["Company"] },
+          { label: "Company registration certificate", types: ["Company"] },
+          { label: "Registered Address of the company", types: ["Company"] },
+          { label: "Form 20", types: ["Company"] },
+          { label: "Partnership registration certificate", types: ["Partnership"] },
+          { label: "NIC/passport copies of every partner", types: ["Partnership"] },
+          { label: "Other (Partnership)", types: ["Partnership"] },
+          { label: "NIC/passport of the sole proprietor", types: ["Sole proprietorship"] },
+          { label: "Business registration/sole proprietorship certificate", types: ["Sole proprietorship"] },
+          { label: "Other (Sole proprietorship)", types: ["Sole proprietorship"] },
+          { label: "NIC (Individual owner)", types: ["Individual"] },
+          { label: "Other (Individual)", types: ["Individual"] },
+        ];
+        FORM2_DOCS_ALL
+          .filter(d => d.types.includes('all') || partyTypes.some((t: string) => d.types.includes(t)))
+          .forEach(d => {
+            if (!seen.has(d.label)) {
+              seen.add(d.label);
+              documentsData.push({ label: d.label, type: d.types.includes('all') ? 'Common' : d.types[0], status: 'NONE' });
+            }
+          });
+      } else if (formConfig?.docs?.length) {
         formConfig.docs.forEach((doc) => {
           const normalizedType = doc.type.replace('-', ' ');
           const isPartyMatch = partyTypes.includes(doc.type) || partyTypes.includes(normalizedType);
@@ -154,14 +201,13 @@ export async function POST(req: NextRequest) {
           }
         });
       } else {
-        // Fallback hardcoded map if settings not configured
         const docMap: Record<string, string[]> = {
           Company: ['Certificate of Incorporation','Form 1 (Company Registration)','Articles of Association','Board Resolution','VAT Registration Certificate'],
           Partnership: ['Partnership Agreement','Business Registration Certificate','NIC copies of all Partners'],
           'Sole proprietorship': ['Business Registration Certificate','NIC copy of Proprietor'],
           Individual: ['NIC copy', 'Proof of Address'],
         };
-        partyTypes.forEach((type) => {
+        partyTypes.forEach((type: string) => {
           (docMap[type] || []).forEach((label) => {
             if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type, status: 'NONE' }); }
           });
@@ -171,7 +217,7 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // ─── Create Submission with All Related Records ───
+            // ─── Create Submission with All Related Records ───
       return await tx.submission.create({
         data: {
           submissionNo,

@@ -360,7 +360,7 @@ export default function SpecialApproverHomePage() {
             formType: `FORM ${s.formId}`,
             submittedBy: currentUserName,
             submittedDate: formatDate(s.createdAt),
-            route: `/form${s.formId}?id=${s.id}`,
+            route: `/form${s.formId}?mode=view&id=${s.id}`,
           }));
 
         setWorkflows(prev => [...prev, ...resubmitItems]);

@@ -176,6 +176,61 @@ function SendBackModal({ submissionNo, onConfirm, onClose, loading }: {
   );
 }
 
+function CancelModal({ submissionNo, onConfirm, onClose, loading }: {
+  submissionNo: string; onConfirm: (comment: string) => void; onClose: () => void; loading: boolean;
+}) {
+  const [comment, setComment] = useState('');
+  const [done, setDone] = useState(false);
+
+  if (done) return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center text-center">
+        <div className="w-20 h-20 rounded-2xl bg-red-100 flex items-center justify-center mb-5">
+          <XCircle className="w-10 h-10 text-red-500" />
+        </div>
+        <h2 className="text-[#17293E] text-xl font-bold mb-2">Cancelled!</h2>
+        <p className="text-slate-500 text-sm mb-2">Request <span className="font-mono font-bold text-[#1A438A]">{submissionNo}</span> has been permanently cancelled.</p>
+        <p className="text-slate-400 text-xs mb-6">The initiator will be notified.</p>
+        <button onClick={onClose} className="w-full py-3 rounded-xl font-bold text-white"
+          style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>OK</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="px-6 py-5">
+          <h3 className="text-[#17293E] font-bold text-base text-center mb-1">Cancel this request?</h3>
+          <p className="text-slate-500 text-xs text-center mb-4 leading-relaxed">
+            This action is <span className="font-bold text-red-500">irreversible</span>. The initiator will be notified.
+          </p>
+          <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">
+            Reason <span className="text-red-400">*</span>
+          </label>
+          <textarea value={comment} onChange={e => setComment(e.target.value)} rows={3}
+            placeholder="Please provide a reason for cancellation..."
+            className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10" />
+        </div>
+        <div className="flex gap-3 px-6 pb-5">
+          <button onClick={onClose} disabled={loading}
+            className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all disabled:opacity-50">
+            Back
+          </button>
+          <button disabled={!comment.trim() || loading}
+            onClick={() => { onConfirm(comment); setDone(true); }}
+            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2"
+            style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>
+            {loading ? <><Loader2 className="w-4 h-4 animate-spin" />Saving...</> : 'Yes, Cancel'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function CEOApprovalPageContent() {
@@ -198,6 +253,7 @@ function CEOApprovalPageContent() {
   const [commentInput, setCommentInput] = useState('');
   const [showApproveModal, setShowApproveModal] = useState(false);
   const [showSendBackModal, setShowSendBackModal] = useState(false);
+  const [showCancelModal, setShowCancelModal] = useState(false);
 
   // ── Load submission ──
   const loadSubmission = useCallback(async () => {
@@ -225,7 +281,7 @@ function CEOApprovalPageContent() {
   useEffect(() => { loadSubmission(); }, [loadSubmission]);
 
   // ── CEO approval action ──
-  const callCEOAction = async (action: 'APPROVED' | 'SENT_BACK', comment?: string) => {
+  const callCEOAction = async (action: 'APPROVED' | 'SENT_BACK' | 'CANCELLED', comment?: string) => {
     if (!submissionId || !submission) return;
     setIsActing(true);
     setApiError('');
@@ -560,6 +616,11 @@ function CEOApprovalPageContent() {
 
             {!alreadyActed && !isCancelled && (
               <div className="flex gap-2">
+                <button onClick={() => setShowCancelModal(true)} disabled={isActing}
+                  className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
+                  style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>
+                  Cancel
+                </button>
                 <button onClick={() => setShowSendBackModal(true)} disabled={isActing}
                   className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 shadow-lg shadow-orange-500/20 disabled:opacity-70"
                   style={{ background: 'linear-gradient(135deg, #f97316, #ea580c)' }}>
@@ -589,6 +650,7 @@ function CEOApprovalPageContent() {
       {showLog && <ViewLogModal log={log} onClose={() => setShowLog(false)} />}
       {showApproveModal && <ApproveModal submissionNo={submission.submissionNo} onClose={() => { setShowApproveModal(false); router.push(ROUTES.HOME); }} />}
       {showSendBackModal && <SendBackModal submissionNo={submission.submissionNo} onConfirm={(c) => callCEOAction('SENT_BACK', c)} onClose={() => setShowSendBackModal(false)} loading={isActing} />}
+      {showCancelModal && <CancelModal submissionNo={submission.submissionNo} onConfirm={(c) => callCEOAction('CANCELLED', c)} onClose={() => { setShowCancelModal(false); router.push(ROUTES.HOME); }} loading={isActing} />}
 
       {showSignOut && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

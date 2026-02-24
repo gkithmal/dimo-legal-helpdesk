@@ -44,41 +44,44 @@ const WORKFLOW_STEPS = [
 
 
 
-// All 24 Form 2 docs from SRS — shown dynamically based on lessor type
-const FORM2_DOCS_ALL = [
-  { label: "Offer Letter from the landowner and/or the Life Interest Holder", types: ["all"] },
-  { label: "Copy of the Title Deed of the property to be leased", types: ["all"] },
-  { label: "Copy of the Approved Survey Plan", types: ["all"] },
-  { label: "Extracts from Land Registry for past 30 years", types: ["all"] },
-  { label: "Copy of the Approved Building Plan", types: ["all"] },
-  { label: "Latest Street Line Certificate from Municipal Council/Urban Council/Pradeshiya Sabha", types: ["all"] },
-  { label: "Latest Building Line Certificate from Municipal Council/Urban Council/Pradeshiya Sabha", types: ["all"] },
-  { label: "Latest Non-Vesting Certificate from Municipal Council/Urban Council/Pradeshiya Sabha", types: ["all"] },
-  { label: "Certificate of Ownership from Municipal Council/Urban Council/Pradeshiya Sabha", types: ["all"] },
-  { label: "Last Municipal Tax payment receipt with a copy of latest Assessment Notice", types: ["all"] },
-  { label: "Certificate of Conformity (if there is a building)", types: ["all"] },
-  { label: "Declaration that premises are not vested or subject of any notice of acquisition", types: ["all"] },
-  { label: "Plan of the building/area to be leased with parking areas", types: ["all"] },
-  { label: "Copy of any Mortgage on property (if no Mortgage, confirmation to that effect)", types: ["all"] },
-  { label: "If loans outstanding — Copy of Loan Agreement with lending authority", types: ["all"] },
-  { label: "Letter of Acceptance", types: ["all"] },
-  { label: "Last receipt of Water and Electricity bills paid", types: ["all"] },
-  { label: "Copy of National Identity Card/Cards", types: ["all"] },
-  { label: "If owner living abroad — copy of Passport and Power of Attorney", types: ["all"] },
-  { label: "Copy of Fire Certificate (for Buildings)", types: ["all"] },
-  { label: "Inventory", types: ["all"] },
-  { label: "Lessor VAT Registration No (If applicable)", types: ["all"] },
-  { label: "Confirmation from Facilities Manager regarding existing buildings", types: ["all"] },
-  { label: "i. Memorandum and Article of Association", types: ["Company"] },
-  { label: "ii. Board Resolution", types: ["Company"] },
-  { label: "iii. Company registration certificate", types: ["Company"] },
-  { label: "iv. Registered Address of the company", types: ["Company"] },
-  { label: "v. Form 20", types: ["Company"] },
-  { label: "i. Partnership registration certificate", types: ["Partnership"] },
-  { label: "ii. NIC/passport copies of every partner", types: ["Partnership"] },
-  { label: "i. NIC/passport of the sole proprietor", types: ["Sole proprietorship"] },
-  { label: "ii. Business registration/sole proprietorship certificate", types: ["Sole proprietorship"] },
-  { label: "i. NIC (Individual owner)", types: ["Individual"] },
+// All Form 2 docs from SRS
+const FORM2_DOCS_ALL: { label: string; types: string[]; mandatory?: boolean }[] = [
+  { label: "Offer Letter from the landowner and/or the Life Interest Holder",                                types: ["all"], mandatory: true },
+  { label: "Copy of the Title Deed of the property to be leased",                                           types: ["all"], mandatory: true },
+  { label: "Copy of the Approved Survey Plan",                                                              types: ["all"], mandatory: true },
+  { label: "Copy of the Approved Building Plan",                                                            types: ["all"] },
+  { label: "Latest Street Line Certificate from Municipal Council/Urban Council/Pradeshiya Sabha",          types: ["all"] },
+  { label: "Latest Building Line Certificate from Municipal Council/Urban Council/Pradeshiya Sabha",        types: ["all"] },
+  { label: "Latest Non-Vesting Certificate from Municipal Council/Urban Council/Pradeshiya Sabha",          types: ["all"] },
+  { label: "Certificate of Ownership from Municipal Council/Urban Council/Pradeshiya Sabha",               types: ["all"] },
+  { label: "Last Municipal Tax payment receipt with a copy of latest Assessment Notice",                    types: ["all"] },
+  { label: "Certificate of Conformity (if there is a building)",                                           types: ["all"], mandatory: true },
+  { label: "Declaration that premises are not vested or subject of any notice of acquisition",              types: ["all"] },
+  { label: "Plan of the building/area to be leased with parking areas",                                    types: ["all"] },
+  { label: "Copy of any Mortgage on property (if no Mortgage, confirmation to that effect)",               types: ["all"] },
+  { label: "If loans outstanding — Copy of Loan Agreement with lending authority",                         types: ["all"] },
+  { label: "Letter of Acceptance",                                                                         types: ["all"] },
+  { label: "Extracts from Land Registry for past 30 years",                                                types: ["all"], mandatory: true },
+  { label: "Last receipt of Water and Electricity bills paid",                                              types: ["all"] },
+  { label: "Copy of National Identity Card/Cards",                                                         types: ["all"] },
+  { label: "If owner living abroad — copy of Passport and Power of Attorney",                              types: ["all"] },
+  { label: "Copy of Fire Certificate (for Buildings)",                                                     types: ["all"] },
+  { label: "Inventory",                                                                                    types: ["all"] },
+  { label: "Lessor VAT Registration No (If applicable)",                                                   types: ["all"] },
+  { label: "Confirmation from Facilities Manager regarding existing buildings",                             types: ["all"] },
+  { label: "Memorandum and Article of Association",                                                        types: ["Company"] },
+  { label: "Board Resolution",                                                                              types: ["Company"] },
+  { label: "Company registration certificate",                                                             types: ["Company"] },
+  { label: "Registered Address of the company",                                                            types: ["Company"] },
+  { label: "Form 20",                                                                                      types: ["Company"] },
+  { label: "Partnership registration certificate",                                                         types: ["Partnership"] },
+  { label: "NIC/passport copies of every partner",                                                         types: ["Partnership"] },
+  { label: "Other (Partnership)",                                                                          types: ["Partnership"] },
+  { label: "NIC/passport of the sole proprietor",                                                         types: ["Sole proprietorship"] },
+  { label: "Business registration/sole proprietorship certificate",                                        types: ["Sole proprietorship"] },
+  { label: "Other (Sole proprietorship)",                                                                  types: ["Sole proprietorship"] },
+  { label: "NIC (Individual owner)",                                                                       types: ["Individual"] },
+  { label: "Other (Individual)",                                                                           types: ["Individual"] },
 ];
 
 const STATUS_TO_STEP: Record<string, number> = {
@@ -105,11 +108,16 @@ function FieldError({ message }: { message?: string }) {
   return <p className="text-[11px] text-red-500 mt-1 font-medium">{message}</p>;
 }
 
-function TextField({ value, onChange, placeholder, disabled, hasError }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean; hasError?: boolean;
+function TextField({ value, onChange, placeholder, disabled, hasError, allowedChars }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean; hasError?: boolean; allowedChars?: RegExp;
 }) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    if (allowedChars && !allowedChars.test(val) && val !== '') return;
+    onChange(val);
+  };
   return (
-    <input type="text" value={value} onChange={(e) => onChange(e.target.value)}
+    <input type="text" value={value} onChange={handleChange}
       placeholder={placeholder} disabled={disabled}
       className={`w-full px-3.5 py-2.5 rounded-lg border text-sm transition-all
         focus:outline-none focus:ring-2 focus:ring-[#1A438A]/10 focus:border-[#1A438A]
@@ -241,6 +249,50 @@ function generateSubmissionId(): string {
   return `LHD_${datePart}_${seq}`;
 }
 
+function ComboBox({ value, onChange, options, placeholder, disabled = false, dropUp = false, hasError = false }: {
+  value: string; onChange: (v: string) => void; options: string[]; placeholder?: string;
+  disabled?: boolean; dropUp?: boolean; hasError?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+  const filtered = options.filter(o => o.toLowerCase().includes(query.toLowerCase()));
+  return (
+    <div ref={ref} className="relative">
+      <div onClick={() => !disabled && setOpen(o => !o)}
+        className={`w-full px-3.5 py-2.5 rounded-lg border text-sm flex items-center justify-between cursor-pointer transition-all
+          ${disabled ? 'bg-slate-50 cursor-not-allowed opacity-60' : 'bg-white hover:border-[#1A438A]'}
+          ${hasError ? 'border-red-300 bg-red-50' : open ? 'border-[#1A438A] ring-2 ring-[#1A438A]/10' : 'border-slate-200'}`}>
+        <span className={value ? 'text-slate-700' : 'text-slate-400'}>{value || placeholder || 'Select...'}</span>
+        <svg className={`w-4 h-4 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+      </div>
+      {open && (
+        <div className={`absolute z-50 w-full bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden ${dropUp ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+          <div className="p-2 border-b border-slate-100">
+            <input autoFocus value={query} onChange={e => setQuery(e.target.value)}
+              placeholder="Search..." className="w-full px-3 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A]" />
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {filtered.length === 0
+              ? <div className="px-3 py-2 text-sm text-slate-400 italic">No results</div>
+              : filtered.map(o => (
+                  <div key={o} onClick={() => { onChange(o); setOpen(false); setQuery(''); }}
+                    className={`px-3 py-2 text-sm cursor-pointer hover:bg-[#EEF3F8] transition-colors ${value === o ? 'bg-[#EEF3F8] font-semibold text-[#1A438A]' : 'text-slate-700'}`}>
+                    {o}
+                  </div>
+                ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Form2PageContent() {
   const { data: session } = useSession();
   const router = useRouter();
@@ -298,6 +350,9 @@ function Form2PageContent() {
   const [buildingsConstructed, setBuildingsConstructed] = useState<'yes' | 'no' | ''>('');
   const [intendToConstruct, setIntendToConstruct] = useState<'yes' | 'no' | ''>('');
   const [remarks, setRemarks] = useState('');
+  const [legalOfficer, setLegalOfficer] = useState('');
+  const [legalOfficerOptions, setLegalOfficerOptions] = useState<string[]>([]);
+  const [userIdMap, setUserIdMap] = useState<Record<string,string>>({});
 
   // ── Approvers ──
   const [bum, setBum] = useState('');
@@ -306,7 +361,6 @@ function Form2PageContent() {
   const [bumOptions, setBumOptions] = useState<string[]>([]);
   const [fbpOptions, setFbpOptions] = useState<string[]>([]);
   const [clusterOptions, setClusterOptions] = useState<string[]>([]);
-  const [userIdMap, setUserIdMap] = useState<Record<string, string>>({});
 
   // ── Documents ──
   const [docFiles, setDocFiles] = useState<Record<string, AttachedFile[]>>({});
@@ -318,10 +372,14 @@ function Form2PageContent() {
   useEffect(() => {
     fetch('/api/users').then(r => r.json()).then(data => {
       if (!data.success) return;
-      const users: { id: string; name: string; email: string; role: string; isActive: boolean }[] = data.data;
-      const idMap: Record<string, string> = {};
-      users.forEach(u => { if (u.name) idMap[u.name] = u.id; idMap[u.email] = u.id; });
+      const idMap: Record<string,string> = {};
+      data.data.forEach((u: {id:string;name:string;email:string}) => { if (u.name) idMap[u.name] = u.id; idMap[u.email] = u.id; });
       setUserIdMap(idMap);
+      const loOptions = data.data
+        .filter((u: {role:string;isActive:boolean;formIds:number[]}) => u.role === 'LEGAL_OFFICER' && u.isActive && (u.formIds || []).includes(2))
+        .map((u: {name:string;email:string}) => u.name || u.email);
+      setLegalOfficerOptions(loOptions);
+      const users: { id: string; name: string; email: string; role: string; isActive: boolean }[] = data.data;
       const toNames = (role: string) => users.filter(u => u.role === role && u.isActive).map(u => u.name || u.email);
       setBumOptions(toNames('BUM'));
       setFbpOptions(toNames('FBP'));
@@ -329,12 +387,12 @@ function Form2PageContent() {
     }).catch(console.error);
   }, []);
 
-  // ── Pre-fill contact person from session ──
+  // ── Pre-fill contact person from session (only for new forms) ──
   useEffect(() => {
-    if (session?.user?.name && !contactPerson) {
+    if (session?.user?.name && !contactPerson && mode === 'new') {
       setContactPerson(session.user.name);
     }
-  }, [session]);
+  }, [session, mode]);
 
   // ── Load form config ──
   useEffect(() => {
@@ -383,6 +441,7 @@ function Form2PageContent() {
           setBuildingsConstructed(meta.buildingsConstructed || '');
           setIntendToConstruct(meta.intendToConstruct || '');
           setRemarks(meta.remarks || '');
+          setLegalOfficer(s.legalOfficerName || s.assignedLegalOfficer || '');
           setContactPerson(meta.contactPerson || session?.user?.name || '');
         } catch {}
         if (s.approvals?.length) {
@@ -421,31 +480,42 @@ function Form2PageContent() {
   const validate = (): string[] => {
     const errors: string[] = [];
     if (!contactNo.trim())        errors.push('Contact No is required');
+    else if (!/^[0-9+\s\-()]+$/.test(contactNo.trim())) errors.push('Contact No must be numeric');
     if (!deptSapCode)             errors.push('Dept. SAP code is required');
     if (!purposeOfLease.trim())   errors.push('Purpose of Lease is required');
     if (!lessorParties.some(p => p.type && p.name.trim())) errors.push('At least one Property Owner (Lessor) is required');
+    if (!legalOfficer) errors.push('Legal Officer is required');
     if (!nicNo.trim())            errors.push('NIC No is required');
     if (!lessorContact.trim())    errors.push('Contact is required');
+    else if (!/^[0-9+\s\-()]+$/.test(lessorContact.trim())) errors.push('Lessor Contact must be numeric');
     if (!leaseName.trim())        errors.push('Name of Lessee/Tenant is required');
     if (!periodOfLease.trim())    errors.push('Period of Lease is required');
     if (!assetHouse && !assetLand && !assetBuilding) errors.push('Asset Type is required (select at least one)');
     if (!commencingFrom)          errors.push('Commencing from date is required');
     if (!endingOn)                errors.push('Ending on date is required');
+    if (commencingFrom && endingOn && new Date(endingOn) <= new Date(commencingFrom)) errors.push('Ending on date must be after Commencing from date');
     if (!monthlyRental.trim())    errors.push('Monthly Rental is required');
+    else if (!/^[0-9,]+$/.test(monthlyRental.trim())) errors.push('Monthly Rental must be a number (e.g. 100,000)');
     if (!refundableDeposit.trim()) errors.push('Refundable Deposit is required');
+    else if (!/^[0-9,]+$/.test(refundableDeposit.trim())) errors.push('Refundable Deposit must be a number (e.g. 175,000)');
     if (!electricityWaterPhone.trim()) errors.push('Electricity, Water & Phone is required');
     if (!buildingsConstructed)    errors.push('Please indicate if buildings are fully or partly constructed');
     if (!intendToConstruct)       errors.push('Please indicate if you intend to construct any building');
     if (!bum)                     errors.push('BUM is required');
     if (!fbp)                     errors.push('FBP is required');
     if (!clusterHead)             errors.push('Cluster Head is required');
+    // Block submission if mandatory docs not uploaded
+    FORM2_DOCS_ALL.filter(d => d.mandatory).forEach(d => {
+      const files = docFiles[d.label] || [];
+      if (files.length === 0) errors.push(`Required document missing: "${d.label}"`);
+    });
     return errors;
   };
 
   const hasError = (field: string) => submitted && validate().some(e => e.toLowerCase().includes(field.toLowerCase()));
 
   const buildMeta = () => JSON.stringify({
-    contactNo, deptSapCode, purposeOfLease, lessorParties, nicNo, vatRegNo, lessorContact,
+    contactPerson, contactNo, deptSapCode, purposeOfLease, lessorParties, nicNo, vatRegNo, lessorContact,
     leaseName, premisesAssetNo, periodOfLease, assetHouse, assetLand, assetBuilding, assetExtent,
     commencingFrom, endingOn, monthlyRental, advancePayment, deductibleRate, deductiblePeriod,
     refundableDeposit, electricityWaterPhone, previousAgreementNo, dateOfPrincipalAgreement,
@@ -460,8 +530,13 @@ function Form2PageContent() {
     }
     setIsSubmitting(true);
     try {
+      // For resubmit: generate new submission number with _R1/_R2 suffix
+      const finalSubmissionNo = mode === 'resubmit' && submissionId
+        ? submissionNo.replace(/_R\d+$/, '') + '_R' + (parseInt(submissionNo.match(/_R(\d+)$/)?.[1] || '0') + 1)
+        : submissionNo;
+
       const payload = {
-        submissionNo,
+        submissionNo: finalSubmissionNo,
         formId: 2,
         formName: 'Lease Agreement',
         status: asDraft ? 'DRAFT' : 'PENDING_APPROVAL',
@@ -475,7 +550,7 @@ function Form2PageContent() {
         lkrValue: monthlyRental.replace(/,/g, ''),
         remarks,
         initiatorComments: '',
-        legalOfficerId: '',
+        legalOfficerId: userIdMap[legalOfficer] || legalOfficer,
         bumId: userIdMap[bum] || bum,
         fbpId: userIdMap[fbp] || fbp,
         clusterHeadId: userIdMap[clusterHead] || clusterHead,
@@ -521,6 +596,14 @@ function Form2PageContent() {
         );
       }
 
+      if (mode === 'resubmit' && submissionId) {
+        // Mark original as RESUBMITTED and link new submission back to it
+        await fetch(`/api/submissions/${submissionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'RESUBMITTED' }),
+        });
+      }
       if (asDraft || mode === 'resubmit') router.push(ROUTES.HOME);
     } catch (err: unknown) {
       setValidationErrors([err instanceof Error ? err.message : 'Submission failed. Please try again.']);
@@ -535,25 +618,13 @@ function Form2PageContent() {
     setDocFiles(prev => ({ ...prev, [docKey]: (prev[docKey] || []).filter(f => f.id !== fileId) }));
 
   const currentStep = mode === 'view' ? (STATUS_TO_STEP[submissionStatus] ?? 1) : 0;
-  const canUploadDocs = !isReadOnly || ['PENDING_APPROVAL', 'SENT_BACK', 'DRAFT'].includes(submissionStatus);
+  const canUploadDocs = mode === 'new' || mode === 'draft' || mode === 'resubmit';
 
-  // Dynamic docs based on selected lessor types + settings
-  const selectedTypes = [...new Set(lessorParties.map((p: any) => p.type).filter(Boolean))];
-  const FORM2_DOCS: string[] = [];
-  if (formConfigDocs.length > 0) {
-    // Use admin-configured docs from settings — filter by lessor type + Common
-    formConfigDocs.forEach((doc) => {
-      const normalizedType = doc.type.replace('-', ' ');
-      if (doc.type === 'Common' || selectedTypes.includes(doc.type) || selectedTypes.includes(normalizedType)) {
-        if (!FORM2_DOCS.includes(doc.label)) FORM2_DOCS.push(doc.label);
-      }
-    });
-  } else {
-    // Fallback to hardcoded FORM2_DOCS_ALL if settings not yet configured
-    FORM2_DOCS_ALL
-      .filter((d: any) => d.types.includes('all') || selectedTypes.some((t: any) => d.types.includes(t)))
-      .forEach((d: any) => { if (!FORM2_DOCS.includes(d.label)) FORM2_DOCS.push(d.label); });
-  }
+  // Dynamic docs — always show all 23 common docs, union type-specific on lessor selection
+  const selectedTypes = [...new Set(lessorParties.map((p) => p.type).filter(Boolean))];
+  const FORM2_DOCS: { label: string; mandatory: boolean }[] = FORM2_DOCS_ALL
+    .filter((d) => d.types.includes('all') || selectedTypes.some((t) => d.types.includes(t)))
+    .map((d) => ({ label: d.label, mandatory: !!d.mandatory }));
 
   return (
     <div className="min-h-screen flex bg-[#f0f4f9]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -635,7 +706,7 @@ function Form2PageContent() {
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <FieldLabel required>Contact No</FieldLabel>
-                    <TextField value={contactNo} onChange={setContactNo} placeholder="+94..." disabled={isReadOnly} hasError={hasError('contact no')} />
+                    <TextField value={contactNo} onChange={setContactNo} placeholder="+94..." disabled={isReadOnly} hasError={hasError('contact no')} allowedChars={/^[0-9+\s\-()]*$/} />
                     <FieldError message={hasError('contact no') ? 'Required' : undefined} />
                   </div>
                   <div>
@@ -687,7 +758,7 @@ function Form2PageContent() {
               {/* Lessor Contact */}
               <div>
                 <FieldLabel required>Contact</FieldLabel>
-                <TextField value={lessorContact} onChange={setLessorContact} placeholder="+94..." disabled={isReadOnly} hasError={hasError('contact is')} />
+                <TextField value={lessorContact} onChange={setLessorContact} placeholder="+94..." disabled={isReadOnly} hasError={hasError('contact is')} allowedChars={/^[0-9+\s\-()]*$/} />
                 <FieldError message={hasError('contact is') ? 'Contact is required' : undefined} />
               </div>
 
@@ -719,15 +790,23 @@ function Form2PageContent() {
                 <FieldLabel required>Asset Type</FieldLabel>
                 <div className="flex items-center gap-6 mt-1 flex-wrap">
                   {[
-                    { label: 'House', value: assetHouse, set: setAssetHouse },
-                    { label: 'Land', value: assetLand, set: setAssetLand },
-                    { label: 'Building', value: assetBuilding, set: setAssetBuilding },
-                  ].map(({ label, value, set }) => (
+                    { label: 'House', key: 'house' },
+                    { label: 'Land', key: 'land' },
+                    { label: 'Building', key: 'building' },
+                  ].map(({ label, key }) => {
+                    const checked = key === 'house' ? assetHouse : key === 'land' ? assetLand : assetBuilding;
+                    const handleSelect = () => {
+                      if (isReadOnly) return;
+                      setAssetHouse(key === 'house');
+                      setAssetLand(key === 'land');
+                      setAssetBuilding(key === 'building');
+                    };
+                    return (
                     <label key={label} className="flex items-center gap-2 cursor-pointer">
-                      <input type="checkbox" checked={value} onChange={e => !isReadOnly && set(e.target.checked)} className="w-4 h-4 accent-[#1A438A]" />
+                      <input type="radio" name="assetType" checked={checked} onChange={handleSelect} className="w-4 h-4 accent-[#1A438A]" />
                       <span className="text-sm text-slate-700">{label}</span>
                     </label>
-                  ))}
+                  );})}
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-slate-500">Extent</span>
                     <input type="text" value={assetExtent} onChange={e => setAssetExtent(e.target.value)}
@@ -755,7 +834,7 @@ function Form2PageContent() {
               {/* Monthly Rental */}
               <div>
                 <FieldLabel required>Monthly Rental Rs.</FieldLabel>
-                <TextField value={monthlyRental} onChange={setMonthlyRental} placeholder="e.g. 100,000" disabled={isReadOnly} hasError={hasError('monthly rental')} />
+                <TextField value={monthlyRental} onChange={setMonthlyRental} placeholder="e.g. 100,000" disabled={isReadOnly} hasError={hasError('monthly rental')} allowedChars={/^[0-9,\.]*$/} />
                 <FieldError message={hasError('monthly rental') ? 'Monthly Rental is required' : undefined} />
               </div>
 
@@ -763,11 +842,11 @@ function Form2PageContent() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <FieldLabel>Advance Payment Rs.</FieldLabel>
-                  <TextField value={advancePayment} onChange={setAdvancePayment} placeholder="e.g. 150,000" disabled={isReadOnly} />
+                  <TextField value={advancePayment} onChange={setAdvancePayment} placeholder="e.g. 150,000" disabled={isReadOnly} allowedChars={/^[0-9,\.]*$/} />
                 </div>
                 <div>
                   <FieldLabel>Deductible Rate Rs.</FieldLabel>
-                  <TextField value={deductibleRate} onChange={setDeductibleRate} placeholder="e.g. 50,000" disabled={isReadOnly} />
+                  <TextField value={deductibleRate} onChange={setDeductibleRate} placeholder="e.g. 50,000" disabled={isReadOnly} allowedChars={/^[0-9,\.]*$/} />
                 </div>
                 <div>
                   <FieldLabel>Period</FieldLabel>
@@ -778,7 +857,7 @@ function Form2PageContent() {
               {/* Refundable Deposit */}
               <div>
                 <FieldLabel required>Refundable Deposit Rs.</FieldLabel>
-                <TextField value={refundableDeposit} onChange={setRefundableDeposit} placeholder="e.g. 175,000" disabled={isReadOnly} hasError={hasError('refundable')} />
+                <TextField value={refundableDeposit} onChange={setRefundableDeposit} placeholder="e.g. 175,000" disabled={isReadOnly} hasError={hasError('refundable')} allowedChars={/^[0-9,\.]*$/} />
                 <FieldError message={hasError('refundable') ? 'Refundable Deposit is required' : undefined} />
               </div>
 
@@ -841,6 +920,18 @@ function Form2PageContent() {
                   className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10 disabled:bg-slate-50 disabled:cursor-not-allowed" />
               </div>
 
+              {/* Legal Officer */}
+              <div>
+                <FieldLabel required>Legal Officer</FieldLabel>
+                <ComboBox value={legalOfficer} onChange={setLegalOfficer} options={legalOfficerOptions}
+                  placeholder="Type or select legal officer..." disabled={isReadOnly}
+                  hasError={hasError('legal officer')} dropUp />
+                <FieldError message={hasError('legal officer') ? 'Legal Officer is required' : undefined} />
+                {legalOfficerOptions.length === 0 && !isReadOnly && (
+                  <p className="text-[11px] text-amber-500 mt-1">No Legal Officers assigned to Form 2 yet. Please contact the Legal GM.</p>
+                )}
+              </div>
+
             </div>
           </div>
         </div>
@@ -889,28 +980,43 @@ function Form2PageContent() {
               </button>
             </div>
             <div className="p-3 space-y-1.5">
-              {selectedTypes.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-6 text-center">
-                  <svg className="w-8 h-8 text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  <p className="text-[11px] text-slate-400 font-medium">Select lessor type to see<br/>required documents</p>
-                </div>
-              ) : FORM2_DOCS.map((doc: string, i: number) => {
+              {FORM2_DOCS.map(({ label: doc, mandatory }, i) => {
                 const files = docFiles[doc] || [];
                 const hasFiles = files.length > 0;
+                const isMissingMandatory = mandatory && !hasFiles && submitted;
                 return (
                   <div key={doc} className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
-                    ${hasFiles ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
+                    ${hasFiles
+                      ? 'bg-emerald-50 border-emerald-200'
+                      : isMissingMandatory
+                        ? 'bg-red-50 border-red-200'
+                        : mandatory
+                          ? 'bg-orange-50 border-orange-200'
+                          : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
                     <div className="flex-1 mr-2 min-w-0">
                       <span className="text-[11px] text-slate-600 leading-tight block">
-                        <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc}
+                        <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>
+                        {doc}
+                        {mandatory && <span className="text-orange-500 ml-0.5 font-bold">*</span>}
                       </span>
                       {hasFiles && <span className="text-[10px] text-emerald-600 font-semibold">{files.length} file{files.length > 1 ? 's' : ''} attached</span>}
+                      {isMissingMandatory && <span className="text-[10px] text-red-500 font-semibold">Required — please upload</span>}
                     </div>
-                    {canUploadDocs ? (
-                      <button onClick={() => setUploadPopup({ docKey: doc, docLabel: doc, docId: docIdMap[doc] || '' })} className="flex-shrink-0">
-                        {hasFiles ? <CheckCircle2 className="w-4 h-4 text-emerald-500 hover:text-emerald-600" /> : <Paperclip className="w-4 h-4 text-[#1183B7] hover:text-[#1A438A]" />}
-                      </button>
-                    ) : hasFiles && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {hasFiles && (
+                        <button onClick={() => {
+                          const f = files[0];
+                          if (f.fileUrl) window.open(f.fileUrl, '_blank');
+                        }} title="View file" className="w-6 h-6 rounded-md bg-emerald-100 hover:bg-emerald-200 flex items-center justify-center transition-all">
+                          <svg className="w-3.5 h-3.5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                        </button>
+                      )}
+                      {canUploadDocs ? (
+                        <button onClick={() => setUploadPopup({ docKey: doc, docLabel: doc, docId: docIdMap[doc] || '' })} className="flex-shrink-0">
+                          {hasFiles ? <CheckCircle2 className="w-4 h-4 text-emerald-500 hover:text-emerald-600" /> : <Paperclip className={`w-4 h-4 ${isMissingMandatory ? 'text-red-400 hover:text-red-600' : 'text-[#1183B7] hover:text-[#1A438A]'}`} />}
+                        </button>
+                      ) : hasFiles && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
+                    </div>
                   </div>
                 );
               })}

@@ -8,10 +8,14 @@ export async function GET(req: NextRequest) {
     const role = searchParams.get('role');
     const users = await prisma.user.findMany({
       where: { isActive: true, ...(role ? { role } : {}) },
-      select: { id: true, name: true, email: true, role: true, department: true, isActive: true },
+      select: { id: true, name: true, email: true, role: true, department: true, isActive: true, formIds: true },
       orderBy: { name: 'asc' },
     });
-    return NextResponse.json({ success: true, data: users });
+    const parsed = users.map(u => ({
+      ...u,
+      formIds: u.formIds ? JSON.parse(u.formIds as string) : [],
+    }));
+    return NextResponse.json({ success: true, data: parsed });
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Failed to fetch users' }, { status: 500 });
   }

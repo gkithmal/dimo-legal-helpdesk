@@ -507,8 +507,8 @@ export default function LegalGMHomePage() {
       .then((r) => r.json())
       .then(async (data) => {
         if (!data.success) return;
-        const mapped = data.data.map((s: {
-            id: string; submissionNo: string; formName: string;
+        const mapped = data.data.filter((s: { status: string }) => s.status !== 'RESUBMITTED').map((s: {
+            id: string; submissionNo: string; formName: string; formId: number;
             status: string; assignedLegalOfficer?: string; legalOfficerName?: string; createdAt: string;
           }) => ({
             id:          s.id,
@@ -518,7 +518,7 @@ export default function LegalGMHomePage() {
             createdDate: fmtDate(s.createdAt),
             status:      mapDbStatusToUI(s.status),
             statusLabel: mapDbStatusToLabel(s.status),
-            route:       `/form1/legal-gm?id=${s.id}`,
+            route:       `/form${s.formId || 1}/legal-gm?id=${s.id}`,
           }));
         setApprovals(mapped);
       })

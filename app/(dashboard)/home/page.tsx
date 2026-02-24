@@ -206,7 +206,7 @@ function DraftsPanel({ items, loading, onClose, onNavigate }: { items: Submissio
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-[#91ADC5]"><FileText className="w-10 h-10 mb-3 opacity-30" /><p className="text-sm">No drafts saved yet</p></div>
           ) : items.map((item) => (
-            <button key={item.id} onClick={() => { onClose(); onNavigate(`/form1?mode=draft&id=${item.id}`); }} className="w-full text-left px-6 py-4 hover:bg-[#1183B7]/10 transition-colors group border-l-4 border-l-slate-400">
+            <button key={item.id} onClick={() => { onClose(); onNavigate(`/form${item.formType.replace('FORM ', '')}?mode=draft&id=${item.id}`); }} className="w-full text-left px-6 py-4 hover:bg-[#1183B7]/10 transition-colors group border-l-4 border-l-slate-400">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1"><span className="text-[#91ADC5] text-xs font-mono">{item.requestNo}</span><span className="text-[#AC9C2F] text-xs font-semibold">{item.formType}</span></div>
@@ -260,7 +260,7 @@ function SubmissionsPanel({ items, loading, onClose, onNavigate }: { items: Subm
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-[#91ADC5]"><FileText className="w-10 h-10 mb-3 opacity-30" /><p className="text-sm">No submissions found</p></div>
           ) : filtered.map((item) => (
-            <button key={item.id} onClick={() => { onClose(); onNavigate(`/form1?mode=${item.status === 'RESUBMIT' ? 'resubmit' : 'view'}&id=${item.id}`); }} className={`w-full text-left px-6 py-4 hover:bg-[#1183B7]/10 transition-colors group border-l-4 ${SUBMISSION_BORDER[item.status]}`}>
+            <button key={item.id} onClick={() => { onClose(); onNavigate(`/form${item.formType.replace('FORM ', '')}?mode=${item.status === 'RESUBMIT' ? 'resubmit' : 'view'}&id=${item.id}`); }} className={`w-full text-left px-6 py-4 hover:bg-[#1183B7]/10 transition-colors group border-l-4 ${SUBMISSION_BORDER[item.status]}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1"><span className="text-[#91ADC5] text-xs font-mono">{item.requestNo}</span><span className="text-[#AC9C2F] text-xs font-semibold">{item.formType}</span></div>
@@ -330,29 +330,22 @@ export default function HomePage() {
           // Instead we look at each role's historical involvement.
           const mySubmissions = (() => {
             if (currentRole === 'BUM')
-              // BUM sees all submissions where they are assigned as BUM
-              return all.filter((s: any) => s.bumId === currentUserId);
+              return all.filter((s: any) => s.bumId === currentUserId && s.status !== 'RESUBMITTED');
 
             if (currentRole === 'FBP')
-              // FBP sees all submissions where they are assigned as FBP
-              return all.filter((s: any) => s.fbpId === currentUserId);
+              return all.filter((s: any) => s.fbpId === currentUserId && s.status !== 'RESUBMITTED');
 
             if (currentRole === 'CLUSTER_HEAD')
-              // Cluster Head sees all submissions where they are assigned
-              return all.filter((s: any) => s.clusterHeadId === currentUserId);
+              return all.filter((s: any) => s.clusterHeadId === currentUserId && s.status !== 'RESUBMITTED');
 
             if (currentRole === 'LEGAL_GM')
-              // FIX: GM sees ALL submissions that have EVER reached GM stage
-              // (not just currently at GM stage). We detect this by checking
-              // if the submission has passed the initial approval stage at all.
-              return all.filter((s: any) => ![
-                'PENDING_APPROVAL', 'DRAFT'
-              ].includes(s.status));
+              return all.filter((s: any) => !['PENDING_APPROVAL', 'DRAFT', 'RESUBMITTED'].includes(s.status));
 
             if (currentRole === 'LEGAL_OFFICER')
-              // FIX: LO sees ALL submissions ever assigned to them
-              // (not just those currently at LO stage)
-              return all.filter((s: any) => s.assignedLegalOfficer === currentUserId);
+              return all.filter((s: any) => s.assignedLegalOfficer === currentUserId && s.status !== 'RESUBMITTED');
+
+            if (currentRole === 'CEO')
+              return all.filter((s: any) => s.status === 'PENDING_CEO' && s.status !== 'RESUBMITTED');
 
             return [];
           })();
@@ -391,7 +384,7 @@ export default function HomePage() {
               const route =
                 currentRole === 'LEGAL_OFFICER' ? `/form${s.formId}/legal-officer?id=${s.id}` :
                 currentRole === 'LEGAL_GM'       ? `/form${s.formId}/legal-gm?id=${s.id}` :
-                currentRole === 'CEO'           ? `/form${s.formId}/ceo?id=${s.id}` :
+                currentRole === 'CEO'            ? `/form${s.formId}/ceo?id=${s.id}` :
                                                    `/form${s.formId}/approval?id=${s.id}`;
 
               return {
@@ -407,6 +400,8 @@ export default function HomePage() {
             if (currentRole === 'BUM' || currentRole === 'FBP' || currentRole === 'CLUSTER_HEAD')
               return s.status === 'PENDING_APPROVAL' &&
                      s.approvals?.some((a: any) => a.role === currentRole && a.status === 'PENDING');
+            if (currentRole === 'CEO')
+              return s.status === 'PENDING_CEO';
             if (currentRole === 'LEGAL_GM')
               return ['PENDING_LEGAL_GM', 'PENDING_LEGAL_GM_FINAL'].includes(s.status);
             if (currentRole === 'LEGAL_OFFICER')
@@ -414,8 +409,8 @@ export default function HomePage() {
             return false;
           };
 
-          // LO and GM also see all their past submissions (view only)
-          const workflowSubmissions = (currentRole === 'LEGAL_OFFICER' || currentRole === 'LEGAL_GM')
+          // LO, GM and CEO also see all their past submissions (view only)
+          const workflowSubmissions = (currentRole === 'LEGAL_OFFICER' || currentRole === 'LEGAL_GM' || currentRole === 'CEO')
             ? mySubmissions
             : mySubmissions.filter((s: any) => needsAction(s));
 
@@ -438,14 +433,14 @@ export default function HomePage() {
         } else {
           // ── Initiator workflows — sent back items needing resubmission ─────
           setWorkflows(
-            all.filter((s: any) => s.initiatorId === currentUserId && s.status === 'SENT_BACK')
+            all.filter((s: any) => s.initiatorId === currentUserId && s.status === 'SENT_BACK' && !all.some((r: any) => r.parentId === s.id))
                .map((s: any) => ({
                  id: s.id, requestNo: s.submissionNo, formTitle: s.formName,
                  formType: `FORM ${s.formId}`, submittedBy: currentUserName,
                  submittedDate: formatDate(s.createdAt), actionRequired: 'RESUBMISSION_NEEDED' as const,
                  dueDate: s.dueDate ? formatDate(s.dueDate) : formatDate(s.updatedAt),
                  isOverdue: s.dueDate ? new Date() > new Date(s.dueDate) : false,
-                 route: `/form${s.formId}?id=${s.id}`,
+                 route: `/form${s.formId}?mode=view&id=${s.id}`,
                }))
           );
         }

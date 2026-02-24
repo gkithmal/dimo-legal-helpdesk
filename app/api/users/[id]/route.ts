@@ -20,15 +20,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     const { id } = await params;
     const body = await req.json();
-    const { role, department, isActive } = body;
+    const { role, department, isActive, formIds } = body;
     const updated = await prisma.user.update({
       where: { id },
       data: {
         ...(role       !== undefined && { role }),
         ...(department !== undefined && { department }),
         ...(isActive   !== undefined && { isActive }),
+        ...(formIds    !== undefined && { formIds: JSON.stringify(formIds) }),
       },
-      select: { id: true, name: true, email: true, role: true, department: true, isActive: true },
+      select: { id: true, name: true, email: true, role: true, department: true, isActive: true, formIds: true },
     });
     return NextResponse.json({ success: true, data: updated });
   } catch {

@@ -93,7 +93,7 @@ function LegalStaffTab() {
   const saveChanges=async()=>{
     if(!selectedId||!selected)return;setSaving(true);setApiError('');
     try{
-      const res=await fetch(`/api/users/${selectedId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:editRole})});
+      const res=await fetch(`/api/users/${selectedId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:editRole,formIds:editForms})});
       const data=await res.json();
       if(!res.ok||!data.success)throw new Error(data.error||'Save failed');
       setStaff((prev)=>prev.map((s)=>s.id===selectedId?{...s,role:editRole,forms:editForms}:s));

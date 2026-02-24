@@ -395,19 +395,42 @@ section "TEST G: Document Verification"
 # ══════════════════════════════════════════════════════════════════════════════
 
 subsect "G1: Documents created with correct types for Individual lessor"
+# Re-login initiator to ensure fresh session for document tests
+login "initiator@testdimo.com" /tmp/c_initiator.txt
 RES=$(make_sub "LHD_QA_F2_DOCS_001" "PENDING_APPROVAL")
+info "G1 raw response: $(echo $RES | cut -c1-200)"
 DOCS_SUB=$(get_id "$RES")
+info "G1 DOCS_SUB=$DOCS_SUB"
 DOC_DATA=$(get_sub $DOCS_SUB | python3 -c "
 import sys,json
 docs=json.load(sys.stdin).get('data',{}).get('documents',[])
-for d in docs: print(f'{d[\"type\"]}|{d[\"label\"]}')
+for d in docs: print(d['type']+'|'+d['label'])
 ")
 info "Documents for Individual lessor:"
-echo "$DOC_DATA" | while IFS='|' read TYPE LABEL; do
-  echo "    [$TYPE] $LABEL"
-done
-DOC_COUNT=$(echo "$DOC_DATA" | wc -l | tr -d ' ')
-[ "$DOC_COUNT" -gt "0" ] && track_pass "Documents created: $DOC_COUNT ✓" || track_fail "No documents"
+echo "$DOC_DATA" | while IFS='|' read TYPE LABEL; do echo "    [$TYPE] $LABEL"; done
+DOC_COUNT=$(echo "$DOC_DATA" | grep -c "|")
+[ "$DOC_COUNT" -eq "25" ] && track_pass "Doc count = 25 (23 common + 2 individual) ✓" || track_fail "Expected 25 docs, got $DOC_COUNT"
+echo "$DOC_DATA" | grep -q "Offer Letter from the landowner" && track_pass "Mandatory: Offer Letter ✓" || track_fail "Missing: Offer Letter"
+echo "$DOC_DATA" | grep -q "Copy of the Title Deed" && track_pass "Mandatory: Title Deed ✓" || track_fail "Missing: Title Deed"
+echo "$DOC_DATA" | grep -q "Copy of the Approved Survey Plan" && track_pass "Mandatory: Survey Plan ✓" || track_fail "Missing: Survey Plan"
+echo "$DOC_DATA" | grep -q "Certificate of Conformity" && track_pass "Mandatory: Certificate of Conformity ✓" || track_fail "Missing: Certificate of Conformity"
+echo "$DOC_DATA" | grep -q "Extracts from Land Registry" && track_pass "Mandatory: Land Registry Extracts ✓" || track_fail "Missing: Land Registry Extracts"
+echo "$DOC_DATA" | grep -q "NIC (Individual owner)" && track_pass "Individual: NIC present ✓" || track_fail "Missing: NIC (Individual owner)"
+echo "$DOC_DATA" | grep -q "Other (Individual)" && track_pass "Individual: Other present ✓" || track_fail "Missing: Other (Individual)"
+echo "$DOC_DATA" | grep -q "Certificate of Incorporation" && track_fail "WRONG: Certificate of Incorporation (Form 1 doc!) found" || track_pass "No Form 1 doc contamination ✓"
+echo "$DOC_DATA" | grep -q "Form 1 (Company Registration)" && track_fail "WRONG: Form 1 Company Registration found" || track_pass "No legacy Form 1 labels ✓"
+
+subsect "G1e: Company lessor gets 28 docs (23 common + 5 company)"
+RES_CO=$(curl -s -b /tmp/c_initiator.txt -X POST "$BASE/api/submissions" \
+  -H "Content-Type: application/json" \
+  -d "{\"submissionNo\":\"LHD_QA_F2_DOCS_CO_001\",\"formId\":2,\"formName\":\"Lease Agreement\",\"status\":\"PENDING_APPROVAL\",\"initiatorId\":\"$INITIATOR_ID\",\"initiatorName\":\"Test Initiator\",\"companyCode\":\"000003999\",\"title\":\"Lease Agreement\",\"sapCostCenter\":\"000003999\",\"scopeOfAgreement\":\"{}\",\"term\":\"\",\"lkrValue\":\"\",\"remarks\":\"\",\"initiatorComments\":\"\",\"legalOfficerId\":\"\",\"bumId\":\"$BUM_ID\",\"fbpId\":\"$FBP_ID\",\"clusterHeadId\":\"$CH_ID\",\"parties\":[{\"type\":\"Company\",\"name\":\"Test Co\"}]}")
+CO_SUB=$(get_id "$RES_CO")
+CO_DOCS=$(get_sub $CO_SUB | python3 -c "import sys,json; docs=json.load(sys.stdin).get('data',{}).get('documents',[]); print(len(docs)); [print(d['label']) for d in docs]")
+CO_COUNT=$(echo "$CO_DOCS" | head -1)
+[ "$CO_COUNT" -eq "28" ] && track_pass "Company: 28 docs ✓" || track_fail "Company: expected 28, got $CO_COUNT"
+echo "$CO_DOCS" | grep -q "Board Resolution" && track_pass "Company: Board Resolution ✓" || track_fail "Missing: Board Resolution"
+echo "$CO_DOCS" | grep -q "Memorandum and Article" && track_pass "Company: Memorandum ✓" || track_fail "Missing: Memorandum"
+echo "$CO_DOCS" | grep -q "Form 20" && track_pass "Company: Form 20 ✓" || track_fail "Missing: Form 20"
 
 subsect "G2: Update document status (Legal Officer marks doc)"
 DOC_ID=$(get_sub $DOCS_SUB | python3 -c "import sys,json; docs=json.load(sys.stdin).get('data',{}).get('documents',[]); print(docs[0]['id'] if docs else '')")
@@ -493,3 +516,138 @@ else
   echo -e "${RED}  ⚠️  $FAIL_COUNT test(s) failed — review ❌ above${NC}"
 fi
 echo ""
+
+# ══════════════════════════════════════════════════════════════════════════════
+section "TEST J: CEO Actions"
+# ══════════════════════════════════════════════════════════════════════════════
+
+subsect "J1: CEO cancels a submission"
+RES=$(make_sub "LHD_QA_F2_CEO_CANCEL_001" "PENDING_CEO")
+CEO_CAN=$(get_id "$RES")
+approve /tmp/c_ceo.txt $CEO_CAN CEO CANCELLED "CEO cancellation"
+check_status $CEO_CAN "CANCELLED"
+
+subsect "J2: CEO sends back"
+RES=$(make_sub "LHD_QA_F2_CEO_SB_001" "PENDING_CEO")
+CEO_SB=$(get_id "$RES")
+approve /tmp/c_ceo.txt $CEO_SB CEO SENT_BACK "CEO send-back"
+check_status $CEO_SB "SENT_BACK"
+
+subsect "J3: CEO-cancelled cannot be resubmitted (status check)"
+CEO_CAN_STATUS=$(get_sub $CEO_CAN | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('status',''))")
+[ "$CEO_CAN_STATUS" = "CANCELLED" ] && track_pass "CEO-cancelled stays CANCELLED (not resubmittable) ✓" || track_fail "Unexpected status: $CEO_CAN_STATUS"
+
+# ══════════════════════════════════════════════════════════════════════════════
+section "TEST K: Resubmission Numbering & RESUBMITTED Filtering"
+# ══════════════════════════════════════════════════════════════════════════════
+
+subsect "K1: Resubmission gets _R1 suffix"
+RES=$(make_sub "LHD_QA_F2_RESUB_BASE_001" "SENT_BACK")
+BASE_SUB=$(get_id "$RES")
+
+R1=$(curl -s -b /tmp/c_initiator.txt -X POST "$BASE/api/submissions" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"submissionNo\": \"LHD_QA_F2_RESUB_BASE_001_R1\",
+    \"formId\": 2, \"formName\": \"Lease Agreement\",
+    \"status\": \"PENDING_APPROVAL\",
+    \"initiatorId\": \"$INITIATOR_ID\", \"initiatorName\": \"Test Initiator\",
+    \"companyCode\": \"000003999\", \"title\": \"Lease Agreement\",
+    \"sapCostCenter\": \"000003999\",
+    \"scopeOfAgreement\": \"{\\\"purposeOfLease\\\":\\\"Resubmitted\\\",\\\"monthlyRental\\\":\\\"150000\\\"}\",
+    \"term\": \"\", \"lkrValue\": \"150000\", \"remarks\": \"\",
+    \"initiatorComments\": \"\", \"legalOfficerId\": \"\",
+    \"bumId\": \"$BUM_ID\", \"fbpId\": \"$FBP_ID\", \"clusterHeadId\": \"$CH_ID\",
+    \"parties\": [{\"type\": \"Individual\", \"name\": \"John Silva\"}],
+    \"parentId\": \"$BASE_SUB\", \"isResubmission\": true
+  }")
+R1_ID=$(get_id "$R1")
+R1_NO=$(echo $R1 | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('submissionNo',''))")
+[ "$R1_NO" = "LHD_QA_F2_RESUB_BASE_001_R1" ] && track_pass "R1 submissionNo = $R1_NO ✓" || track_fail "R1 submissionNo wrong: $R1_NO"
+
+subsect "K2: Mark base as RESUBMITTED, verify hidden from list"
+curl -s -b /tmp/c_initiator.txt -X PATCH "$BASE/api/submissions/$BASE_SUB" \
+  -H "Content-Type: application/json" \
+  -d '{"status":"RESUBMITTED"}' > /dev/null
+
+RESUBMITTED_IN_LIST=$(curl -s -b /tmp/c_initiator.txt "$BASE/api/submissions" | python3 -c "
+import sys, json
+data = json.load(sys.stdin).get('data', [])
+found = [s for s in data if s.get('status') == 'RESUBMITTED']
+print(len(found))
+")
+[ "$RESUBMITTED_IN_LIST" -eq "0" ] && track_pass "RESUBMITTED submissions not returned by API ✓" || track_fail "API still returns $RESUBMITTED_IN_LIST RESUBMITTED submissions"
+
+subsect "K3: R2 suffix on second resubmission"
+R2=$(curl -s -b /tmp/c_initiator.txt -X POST "$BASE/api/submissions" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"submissionNo\": \"LHD_QA_F2_RESUB_BASE_001_R2\",
+    \"formId\": 2, \"formName\": \"Lease Agreement\",
+    \"status\": \"PENDING_APPROVAL\",
+    \"initiatorId\": \"$INITIATOR_ID\", \"initiatorName\": \"Test Initiator\",
+    \"companyCode\": \"000003999\", \"title\": \"Lease Agreement\",
+    \"sapCostCenter\": \"000003999\",
+    \"scopeOfAgreement\": \"{\\\"purposeOfLease\\\":\\\"Second resubmission\\\",\\\"monthlyRental\\\":\\\"150000\\\"}\",
+    \"term\": \"\", \"lkrValue\": \"150000\", \"remarks\": \"\",
+    \"initiatorComments\": \"\", \"legalOfficerId\": \"\",
+    \"bumId\": \"$BUM_ID\", \"fbpId\": \"$FBP_ID\", \"clusterHeadId\": \"$CH_ID\",
+    \"parties\": [{\"type\": \"Individual\", \"name\": \"John Silva\"}],
+    \"parentId\": \"$R1_ID\", \"isResubmission\": true
+  }")
+R2_NO=$(echo $R2 | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('submissionNo',''))")
+[ "$R2_NO" = "LHD_QA_F2_RESUB_BASE_001_R2" ] && track_pass "R2 submissionNo = $R2_NO ✓" || track_fail "R2 submissionNo wrong: $R2_NO"
+
+# ══════════════════════════════════════════════════════════════════════════════
+section "TEST L: Document Count Validation"
+# ══════════════════════════════════════════════════════════════════════════════
+
+subsect "L1: Individual lessor — expect exactly 25 documents"
+RES=$(make_sub "LHD_QA_F2_DOCC_IND_001" "PENDING_APPROVAL")
+DOCC_IND=$(get_id "$RES")
+IND_COUNT=$(get_sub $DOCC_IND | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',{}).get('documents',[])))")
+[ "$IND_COUNT" -eq "25" ] && track_pass "Individual lessor doc count = 25 ✓" || track_fail "Individual doc count wrong: $IND_COUNT (expected 25)"
+
+# Check mandatory docs present
+IND_LABELS=$(get_sub $DOCC_IND | python3 -c "import sys,json; docs=json.load(sys.stdin).get('data',{}).get('documents',[]); print('\n'.join(d['label'] for d in docs))")
+for MANDATORY in "Offer Letter from the landowner" "Copy of the Title Deed" "Survey Plan" "NIC (Individual owner)"; do
+  echo "$IND_LABELS" | grep -q "$MANDATORY" \
+    && track_pass "Mandatory doc present: '$MANDATORY' ✓" \
+    || track_fail "Mandatory doc MISSING: '$MANDATORY'"
+done
+
+# Check no Form 1 contamination
+for F1_DOC in "Certificate of Incorporation" "Form 1 Company Registration"; do
+  echo "$IND_LABELS" | grep -q "$F1_DOC" \
+    && track_fail "Form 1 doc contamination: '$F1_DOC'" \
+    || track_pass "No Form 1 contamination: '$F1_DOC' absent ✓"
+done
+
+subsect "L2: Company lessor — expect exactly 28 documents"
+COMP_RES=$(curl -s -b /tmp/c_initiator.txt -X POST "$BASE/api/submissions" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"submissionNo\": \"LHD_QA_F2_DOCC_COMP_001\",
+    \"formId\": 2, \"formName\": \"Lease Agreement\",
+    \"status\": \"PENDING_APPROVAL\",
+    \"initiatorId\": \"$INITIATOR_ID\", \"initiatorName\": \"Test Initiator\",
+    \"companyCode\": \"000003999\", \"title\": \"Lease Agreement\",
+    \"sapCostCenter\": \"000003999\",
+    \"scopeOfAgreement\": \"{\\\"contactPerson\\\":\\\"Test\\\",\\\"contactNo\\\":\\\"+94771234567\\\",\\\"deptSapCode\\\":\\\"000003999\\\",\\\"purposeOfLease\\\":\\\"Office\\\",\\\"lessorParties\\\":[{\\\"type\\\":\\\"Company\\\",\\\"name\\\":\\\"ACME Ltd\\\"}],\\\"nicNo\\\":\\\"\\\",\\\"vatRegNo\\\":\\\"VAT123\\\",\\\"lessorContact\\\":\\\"+94711234567\\\",\\\"leaseName\\\":\\\"ACME Lease\\\",\\\"premisesAssetNo\\\":\\\"AST002\\\",\\\"periodOfLease\\\":\\\"3 years\\\",\\\"assetHouse\\\":false,\\\"assetLand\\\":false,\\\"assetBuilding\\\":true,\\\"assetExtent\\\":\\\"3000 sqft\\\",\\\"commencingFrom\\\":\\\"2026-03-01\\\",\\\"endingOn\\\":\\\"2029-03-01\\\",\\\"monthlyRental\\\":\\\"200000\\\",\\\"advancePayment\\\":\\\"400000\\\",\\\"deductibleRate\\\":\\\"10\\\",\\\"deductiblePeriod\\\":\\\"2 months\\\",\\\"refundableDeposit\\\":\\\"200000\\\",\\\"electricityWaterPhone\\\":\\\"Tenant\\\",\\\"previousAgreementNo\\\":\\\"\\\",\\\"dateOfPrincipalAgreement\\\":\\\"\\\",\\\"buildingsConstructed\\\":\\\"None\\\",\\\"intendToConstruct\\\":\\\"None\\\",\\\"remarks\\\":\\\"Company test\\\"}\",
+    \"term\": \"2026-03-01 to 2029-03-01\", \"lkrValue\": \"200000\",
+    \"remarks\": \"Company lessor test\",
+    \"initiatorComments\": \"\", \"legalOfficerId\": \"\",
+    \"bumId\": \"$BUM_ID\", \"fbpId\": \"$FBP_ID\", \"clusterHeadId\": \"$CH_ID\",
+    \"parties\": [{\"type\": \"Company\", \"name\": \"ACME Ltd\"}]
+  }")
+DOCC_COMP=$(get_id "$COMP_RES")
+COMP_COUNT=$(get_sub $DOCC_COMP | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',{}).get('documents',[])))")
+[ "$COMP_COUNT" -eq "28" ] && track_pass "Company lessor doc count = 28 ✓" || track_fail "Company doc count wrong: $COMP_COUNT (expected 28)"
+
+COMP_LABELS=$(get_sub $DOCC_COMP | python3 -c "import sys,json; docs=json.load(sys.stdin).get('data',{}).get('documents',[]); print('\n'.join(d['label'] for d in docs))")
+for COMP_DOC in "Board Resolution" "Memorandum and Article of Association" "Form 20"; do
+  echo "$COMP_LABELS" | grep -q "$COMP_DOC" \
+    && track_pass "Company doc present: '$COMP_DOC' ✓" \
+    || track_fail "Company doc MISSING: '$COMP_DOC'"
+done
+

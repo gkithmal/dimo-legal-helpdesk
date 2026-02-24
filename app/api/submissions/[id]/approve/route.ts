@@ -56,7 +56,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           actionDate: new Date(),
         },
       });
-      const newStatus = action === 'APPROVED' ? 'PENDING_LEGAL_GM' : 'SENT_BACK';
+      const newStatus = action === 'APPROVED' ? 'PENDING_LEGAL_GM' : action === 'CANCELLED' ? 'CANCELLED' : 'SENT_BACK';
       await prisma.submission.update({ where: { id }, data: { status: newStatus, updatedAt: new Date() } });
     }
 
