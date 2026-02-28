@@ -388,8 +388,62 @@ function FinanceDetailPage({ submissionId, currentUserName }: { submissionId: st
                 </div>
               ))}
               <div className="col-span-2">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Scope of Agreement</p>
-                <p className="text-sm text-[#17293E] leading-relaxed">{submission.scopeOfAgreement || '—'}</p>
+                {(() => {
+                  let meta: Record<string, any> = {};
+                  try { meta = JSON.parse(submission.scopeOfAgreement || '{}'); } catch {}
+                  const isForm2 = Object.keys(meta).length > 0 && 'monthlyRental' in meta;
+                  if (!isForm2) return (
+                    <>
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Scope of Agreement</p>
+                      <p className="text-sm text-[#17293E] leading-relaxed">{submission.scopeOfAgreement || '—'}</p>
+                    </>
+                  );
+                  return (
+                    <div className="space-y-3">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Agreement Details</p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          ['Contact Person', meta.contactPerson],
+                          ['Contact No', meta.contactNo],
+                          ['Dept. SAP Code', meta.deptSapCode],
+                          ['Purpose of Lease', meta.purposeOfLease],
+                          ['NIC No', meta.nicNo],
+                          ['VAT Reg. No.', meta.vatRegNo],
+                          ['Contact (Lessor)', meta.lessorContact],
+                          ['Name of Lessee/Tenant', meta.leaseName],
+                          ['Premises Asst. No', meta.premisesAssetNo],
+                          ['Period of Lease', meta.periodOfLease],
+                          ['Commencing From', meta.commencingFrom],
+                          ['Ending On', meta.endingOn],
+                          ['Monthly Rental Rs.', meta.monthlyRental],
+                          ['Advance Payment Rs.', meta.advancePayment],
+                          ['Deductible Rate Rs.', meta.deductibleRate],
+                          ['Deductible Period', meta.deductiblePeriod],
+                          ['Refundable Deposit Rs.', meta.refundableDeposit],
+                          ['Electricity/Water/Phone', meta.electricityWaterPhone],
+                          ['Previous Agreement No', meta.previousAgreementNo],
+                          ['Date of Principal Agreement', meta.dateOfPrincipalAgreement],
+                        ].filter(([,v]) => v).map(([label, value]) => (
+                          <div key={label as string}>
+                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-0.5">{label as string}</p>
+                            <p className="text-sm text-[#17293E] font-semibold">{value as string}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {(meta.assetHouse || meta.assetLand || meta.assetBuilding) && (
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Asset Type</p>
+                          <div className="flex gap-2">
+                            {meta.assetHouse && <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-bold">House</span>}
+                            {meta.assetLand && <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-bold">Land</span>}
+                            {meta.assetBuilding && <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-bold">Building</span>}
+                            {meta.assetExtent && <span className="text-xs text-slate-500 ml-1">Extent: {meta.assetExtent}</span>}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               {submission.remarks && (
                 <div className="col-span-2">
@@ -571,11 +625,17 @@ function FinanceDetailPage({ submissionId, currentUserName }: { submissionId: st
 
 // ─── Root ─────────────────────────────────────────────────────────────────────
 function FinancePageContent() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const submissionId = searchParams.get('id');
   const currentUserName = session?.user?.name ?? 'Finance Team';
 
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && session?.user?.role !== 'FINANCE') {
+    router.replace('/');
+    return null;
+  }
   if (submissionId) return <FinanceDetailPage submissionId={submissionId} currentUserName={currentUserName} />;
   return <FinanceHomePage currentUserName={currentUserName} />;
 }

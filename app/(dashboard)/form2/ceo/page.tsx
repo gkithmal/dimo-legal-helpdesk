@@ -234,7 +234,7 @@ function CancelModal({ submissionNo, onConfirm, onClose, loading }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function CEOApprovalPageContent() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const currentUserName = session?.user?.name ?? '';
   const currentUserEmail = session?.user?.email ?? '';
   const router = useRouter();
@@ -330,6 +330,11 @@ function CEOApprovalPageContent() {
     }
   })();
 
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && session?.user?.role !== 'CEO') {
+    router.replace('/');
+    return null;
+  }
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#f0f4f9]">
       <div className="flex flex-col items-center gap-3">

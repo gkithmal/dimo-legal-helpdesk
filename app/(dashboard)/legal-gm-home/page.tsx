@@ -484,7 +484,13 @@ function Dashboard({ statsCards, loStats, ongoingTasks, completedCounts, earlyCo
 export default function LegalGMHomePage() {
   const [showSignOut, setShowSignOut] = useState(false);
   const router                                = useRouter();
-  const { data: session }                     = useSession();
+  const { data: session, status } = useSession();
+
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && session?.user?.role !== 'LEGAL_GM') {
+    router.replace('/login');
+    return null;
+  }
 
   const [preview, setPreview]                 = useState<ApprovalItem | null>(null);
   const [approvals, setApprovals]             = useState<ApprovalItem[]>([]);

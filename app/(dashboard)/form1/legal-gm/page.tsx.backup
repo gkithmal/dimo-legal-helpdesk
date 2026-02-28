@@ -1,13 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
-import { useSession } from 'next-auth/react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import NotificationBell from '@/components/shared/NotificationBell';
 import { ROUTES } from '@/lib/routes';
 import {
-  X, Home, Lightbulb, Search, Settings, User,
-  LogOut, ArrowLeft, CheckCircle2, FileText, Clock, XCircle,
+  X, Home, Bell, Lightbulb, Search, Settings, User,
+  ArrowLeft, CheckCircle2, FileText, Clock, XCircle,
   RotateCcw, ChevronDown, Send, Eye, Paperclip,
   AlertCircle, Loader2, Plus,
 } from 'lucide-react';
@@ -29,7 +27,6 @@ type Submission = {
   submissionNo: string;
   status: string;
   legalGmStage: string;
-  loStage?: string;
   companyCode: string;
   title: string;
   sapCostCenter: string;
@@ -46,7 +43,14 @@ type Submission = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-// LEGAL_OFFICERS loaded dynamically from API
+const LEGAL_OFFICERS = [
+  { name: 'Sandalie Gomes',      email: 'sandalie.gomes@dimolanka.com' },
+  { name: 'Ashan Fernando',      email: 'ashan.fernando@dimolanka.com' },
+  { name: 'Priya Jayasuriya',    email: 'priya.jayasuriya@dimolanka.com' },
+  { name: 'Dimuthu Bandara',     email: 'dimuthu.bandara@dimolanka.com' },
+  { name: 'Sachini Perera',      email: 'sachini.perera@dimolanka.com' },
+  { name: 'Nuwan Silva',         email: 'nuwan.silva@dimolanka.com' },
+];
 
 const DEPARTMENTS = [
   'Corp Comm', 'HRD', 'Finance Department',
@@ -66,14 +70,13 @@ const DEPT_APPROVERS: Record<string, string[]> = {
 
 const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head' };
 
-const WORKFLOW_STEPS = [
-  { label: 'Form\nSubmission' },
-  { label: 'Approvals' },
-  { label: 'CEO\nApproval' },
-  { label: 'Legal GM\nReview' },
-  { label: 'In\nProgress' },
-  { label: 'Legal GM\nApproval' },
-  { label: 'Ready to\nCollect' },
+const WORKFLOW_STEPS_INITIAL = [
+  { label: 'Form\nSubmission' }, { label: 'Approvals' }, { label: 'Legal GM\nReview' },
+  { label: 'In\nProgress' },    { label: 'Legal GM\nApproval' }, { label: 'Ready\nto Collect' },
+];
+const WORKFLOW_STEPS_FINAL = [
+  { label: 'Form\nSubmission' }, { label: 'BUM\nApproved' }, { label: 'FBP\nApproved' },
+  { label: 'Other\napprovals' }, { label: 'Legal GM\nApproval' }, { label: 'In\nProgress' }, { label: 'Ready\nto Collect' },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -193,12 +196,12 @@ function ViewLogModal({ log, onClose }: { log: LogEntry[]; onClose: () => void }
   );
 }
 
-function ReassignModal({ currentOfficer, officers, onSave, onClose }: {
-  currentOfficer: string; officers: { name: string; email: string }[]; onSave: (name: string, email: string) => void; onClose: () => void;
+function ReassignModal({ currentOfficer, onSave, onClose }: {
+  currentOfficer: string; onSave: (name: string, email: string) => void; onClose: () => void;
 }) {
   const [selected, setSelected] = useState('');
   const [step, setStep] = useState<'select' | 'success'>('select');
-  const officer = officers.find((o) => o.name === selected);
+  const officer = LEGAL_OFFICERS.find((o) => o.name === selected);
 
   if (step === 'success') return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -233,7 +236,7 @@ function ReassignModal({ currentOfficer, officers, onSave, onClose }: {
               <select value={selected} onChange={(e) => setSelected(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm bg-white text-slate-700 focus:outline-none focus:border-[#1A438A] appearance-none pr-8">
                 <option value="">Choose an officer...</option>
-                {officers.filter((o) => o.name !== currentOfficer).map((o) => (
+                {LEGAL_OFFICERS.filter((o) => o.name !== currentOfficer).map((o) => (
                   <option key={o.email} value={o.name}>{o.name}</option>
                 ))}
               </select>
@@ -243,7 +246,7 @@ function ReassignModal({ currentOfficer, officers, onSave, onClose }: {
           {selected && (
             <div className="bg-[#EEF3F8] rounded-lg px-3.5 py-2.5">
               <p className="text-[11px] text-slate-500">Email</p>
-              <p className="text-sm font-semibold text-[#1A438A]">{officers.find((o) => o.name === selected)?.email}</p>
+              <p className="text-sm font-semibold text-[#1A438A]">{LEGAL_OFFICERS.find((o) => o.name === selected)?.email}</p>
             </div>
           )}
           <p className="text-[11px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">
@@ -458,11 +461,10 @@ function ConfirmModal({ title, message, confirmLabel, confirmColor, onConfirm, o
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-function LegalGMPageContent() {
+export default function Form1LegalGMPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const submissionId = searchParams.get('id');
-  const { data: session, status } = useSession();
 
   // ── Data state ──
   const [submission, setSubmission] = useState<Submission | null>(null);
@@ -477,14 +479,12 @@ function LegalGMPageContent() {
   const [comments, setComments] = useState<CommentEntry[]>([]);
   const [commentInput, setCommentInput] = useState('');
   const [log, setLog] = useState<LogEntry[]>([]);
-  const [legalOfficers, setLegalOfficers] = useState<{id:string;name:string;email:string}[]>([]);
   const [showLog,           setShowLog]           = useState(false);
   const [showReassign,      setShowReassign]      = useState(false);
   const [showMoreDocs,      setShowMoreDocs]      = useState(false);
   const [showSpecial,       setShowSpecial]       = useState(false);
   const [showConfirmAction, setShowConfirmAction] = useState<'approve' | 'sendback' | 'cancel' | null>(null);
   const [showSuccess,       setShowSuccess]       = useState<'approve' | 'sendback' | 'cancel' | null>(null);
-  const [showSignOut,       setShowSignOut]       = useState(false);
 
   // ── Load submission ──
   const loadSubmission = useCallback(async () => {
@@ -495,41 +495,23 @@ function LegalGMPageContent() {
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load');
       const s = data.data;
       setSubmission(s);
-      const officerName = s.legalOfficerName || s.assignedLegalOfficer || '';
-      setAssignedOfficer({ name: officerName, email: '' });
+      setAssignedOfficer({ name: s.assignedLegalOfficer || '', email: '' });
 
       // Seed log from approvals
-      const approvalEntries = s.approvals
-        .filter((a: ApproverRecord) => a.actionDate)
-        .map((a: ApproverRecord, i: number) => ({
-          id: i + 1,
-          actor: a.approverName || a.role,
-          role: ROLE_LABEL[a.role] ?? a.role,
-          action: a.status === 'APPROVED' ? 'Approved' : a.status === 'SENT_BACK' ? 'Sent Back' : 'Cancelled',
-          comment: a.comment ?? undefined,
-          timestamp: fmtDate(a.actionDate),
-          _sortKey: new Date(a.actionDate || 0).getTime(),
-        }));
-
-      const commentEntries = (s.comments || []).map((c: any, i: number) => ({
-        id: 1000 + i,
-        actor: c.authorName,
-        role: c.authorRole === 'LEGAL_GM' ? 'Legal GM'
-          : c.authorRole === 'LEGAL_OFFICER' ? 'Legal Officer'
-          : c.authorRole,
-        action: `Comment: "${c.text}"`,
-        comment: undefined,
-        timestamp: fmtDate(c.createdAt),
-        _sortKey: new Date(c.createdAt).getTime(),
-      }));
-
-      const allEntries = [
-        { id: 0, actor: 'System', role: 'System', action: 'Submission created', timestamp: fmtDate(s.createdAt), _sortKey: new Date(s.createdAt).getTime() },
-        ...approvalEntries,
-        ...commentEntries,
-      ].sort((a, b) => a._sortKey - b._sortKey);
-
-      setLog(allEntries);
+      const seedLog: LogEntry[] = [
+        { id: 0, actor: 'System', role: 'System', action: 'Submission created', timestamp: fmtDate(s.createdAt) },
+        ...s.approvals
+          .filter((a: ApproverRecord) => a.actionDate)
+          .map((a: ApproverRecord, i: number) => ({
+            id: i + 1,
+            actor: a.approverName || a.role,
+            role: ROLE_LABEL[a.role] ?? a.role,
+            action: a.status === 'APPROVED' ? 'Approved' : a.status === 'SENT_BACK' ? 'Sent Back' : 'Cancelled',
+            comment: a.comment ?? undefined,
+            timestamp: fmtDate(a.actionDate),
+          })),
+      ];
+      setLog(seedLog);
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
@@ -538,26 +520,6 @@ function LegalGMPageContent() {
   }, [submissionId]);
 
   useEffect(() => { loadSubmission(); }, [loadSubmission]);
-
-  useEffect(() => {
-    fetch('/api/users?role=LEGAL_OFFICER')
-      .then(r => r.json())
-      .then(d => { if (d.success) setLegalOfficers(d.data.map((u: any) => ({ id: u.id, name: u.name || '', email: u.email }))); })
-      .catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    fetch('/api/users')
-      .then(r => r.json())
-      .then(data => {
-        if (!data.success) return;
-        const officers = data.data
-          .filter((u: { role: string; isActive: boolean }) => u.role === 'LEGAL_OFFICER' && u.isActive)
-          .map((u: { name: string; email: string }) => ({ name: u.name || u.email, email: u.email }));
-        setLegalOfficers(officers);
-      })
-      .catch(console.error);
-  }, []);
 
   // ── API action ──
   const callApproveAPI = async (action: 'APPROVED' | 'SENT_BACK' | 'CANCELLED', comment?: string) => {
@@ -572,23 +534,17 @@ function LegalGMPageContent() {
           role: 'LEGAL_GM',
           action,
           comment: comment || null,
-          approverName: session?.user?.name || '',
-          approverEmail: session?.user?.email || '',
+          approverName: 'Dinali Gurusinghe',
+          approverEmail: 'dinali.gurusinghe@dimolanka.com',
         }),
       });
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Action failed');
       setSubmission(data.data);
       setLog((prev) => [...prev, {
-        id: Date.now(),
-        actor: session?.user?.name || 'Legal GM',
-        role: 'Legal GM',
-        action: action === 'APPROVED'
-          ? (stage === 'FINAL_APPROVAL' ? 'Final Approved — Sent to Legal Officer for completion' : 'Approved — OK to Proceed')
-          : action === 'SENT_BACK' ? 'Sent Back to Initiator'
-          : 'Cancelled and Rejected',
-        comment,
-        timestamp: new Date().toLocaleString('en-GB'),
+        id: Date.now(), actor: 'Dinali Gurusinghe', role: 'Legal GM',
+        action: action === 'APPROVED' ? 'Approved — OK to Proceed' : action === 'SENT_BACK' ? 'Sent Back to Initiator' : 'Cancelled and Rejected',
+        comment, timestamp: new Date().toLocaleString('en-GB'),
       }]);
     } catch (err: unknown) {
       setApiError(err instanceof Error ? err.message : 'Action failed. Please try again.');
@@ -621,28 +577,12 @@ function LegalGMPageContent() {
   };
 
   // ── Derived ──
-  const stage: LegalGMStage = (submission?.status === 'PENDING_LEGAL_GM_FINAL' || submission?.legalGmStage === 'FINAL_APPROVAL') ? 'FINAL_APPROVAL' : 'INITIAL_REVIEW';
+  const stage: LegalGMStage = (submission?.legalGmStage as LegalGMStage) || 'INITIAL_REVIEW';
   const isInitial = stage === 'INITIAL_REVIEW';
-  const meta = (() => { try { return JSON.parse(submission?.scopeOfAgreement || '{}'); } catch { return {}; } })();
-  const activeStep = (() => {
-    if (!submission) return 0;
-    const { status, loStage } = submission;
-    if (status === 'PENDING_LEGAL_GM') return 2;
-    if (status === 'PENDING_LEGAL_OFFICER' && loStage === 'ACTIVE') return 3;
-    if (status === 'PENDING_SPECIAL_APPROVER') return 3;
-    if (status === 'PENDING_LEGAL_GM_FINAL') return 4;
-    if (status === 'PENDING_LEGAL_OFFICER' && loStage === 'POST_GM_APPROVAL') return 5;
-    if (status === 'COMPLETED') return 5;
-    return 2;
-  })();
-  const steps = WORKFLOW_STEPS;
+  const activeStep = isInitial ? 2 : 4;
+  const steps = isInitial ? WORKFLOW_STEPS_INITIAL : WORKFLOW_STEPS_FINAL;
 
   // ── Loading / Error ──
-    if (status === 'loading') return null;
-  if (status === 'authenticated' && !['LEGAL_GM'].includes(session?.user?.role as string)) {
-    router.replace('/');
-    return null;
-  }
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#f0f4f9]">
       <div className="flex flex-col items-center gap-3">
@@ -685,42 +625,20 @@ function LegalGMPageContent() {
         </div>
         <div className="w-8 h-px bg-white/10" />
         <nav className="flex flex-col items-center gap-1 flex-1 w-full px-2">
-          <NotificationBell />
-          <button onClick={() => router.push(ROUTES.LEGAL_GM_HOME)} className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all" title="Home">
-            <Home className="w-[18px] h-[18px]" />
-          </button>
-          <button className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
-            <Lightbulb className="w-[18px] h-[18px]" />
-          </button>
-          <button className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
-            <Search className="w-[18px] h-[18px]" />
-          </button>
+          {[Home, Bell, Lightbulb, Search].map((Icon, i) => (
+            <button key={i} className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
+              <Icon className="w-[18px] h-[18px]" />
+              {i === 1 && <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-red-500 rounded-full text-[9px] flex items-center justify-center text-white font-bold">5</span>}
+            </button>
+          ))}
         </nav>
         <div className="flex flex-col items-center gap-1 w-full px-2 mb-2">
-          <button onClick={() => router.push('/settings')} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all" title="Settings">
-            <Settings className="w-[18px] h-[18px]" />
-          </button>
-          <button onClick={() => setShowSignOut(true)} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all" title="Sign Out">
-            <User className="w-[18px] h-[18px]" />
-          </button>
+          {[Settings, User].map((Icon, i) => (
+            <button key={i} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all">
+              <Icon className="w-[18px] h-[18px]" />
+            </button>
+          ))}
         </div>
-
-        {showSignOut && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSignOut(false)} />
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xs p-7 flex flex-col items-center text-center">
-              <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center mb-4">
-                <LogOut className="w-7 h-7 text-red-500" />
-              </div>
-              <h3 className="text-[#17293E] font-bold text-base mb-1">Sign Out?</h3>
-              <p className="text-slate-500 text-sm mb-6">You will be redirected to the login page.</p>
-              <div className="flex gap-3 w-full">
-                <button onClick={() => setShowSignOut(false)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
-                <button onClick={() => { setShowSignOut(false); router.push('/login'); }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>Sign Out</button>
-              </div>
-            </div>
-          </div>
-        )}
       </aside>
 
       {/* ── Main ── */}
@@ -737,15 +655,15 @@ function LegalGMPageContent() {
                   <FileText className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-white font-bold text-base">Lease Agreement</h1>
-                  <p className="text-white/50 text-[11px] mt-0.5 font-mono">16/FM/1641/07/02</p>
+                  <h1 className="text-white font-bold text-base">Contract Review Form</h1>
+                  <p className="text-white/50 text-[11px] mt-0.5 font-mono">16/FM/1641/07/01</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-[11px] font-semibold px-3 py-1 rounded-full border bg-purple-500/20 text-purple-200 border-purple-400/30">
                   Legal GM {isInitial ? 'Review' : 'Final Approval'}
                 </span>
-                <div className="bg-white text-[#1A438A] font-bold text-sm px-4 py-2 rounded-xl">Form 2</div>
+                <div className="bg-white text-[#1A438A] font-bold text-sm px-4 py-2 rounded-xl">Form 1</div>
               </div>
             </div>
           </div>
@@ -767,63 +685,31 @@ function LegalGMPageContent() {
             </div>
             <div className="px-6 py-6 space-y-5">
               <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Contact No" value={meta.contactNo || ''} />
-                <ReadField label="Dept. SAP Code" value={meta.deptSapCode || ''} />
+                <ReadField label="Company Code" value={submission.companyCode} />
+                <ReadField label="Title" value={submission.title} />
               </div>
-              <ReadField label="Purpose of Lease" value={meta.purposeOfLease || ''} />
-              <SectionDivider>Property Owner (Lessor)</SectionDivider>
+              <SectionDivider>Parties to the Agreement</SectionDivider>
               <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <div className="grid grid-cols-2 bg-slate-50 border-b border-slate-200">
+                <div className="grid grid-cols-2 gap-0 bg-slate-50 border-b border-slate-200">
                   <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Type</div>
-                  <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-l border-slate-200">Name</div>
+                  <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-l border-slate-200">Name of the Party</div>
                 </div>
-                {(meta.lessorParties || []).filter((p: any) => p.type || p.name).map((p: any, i: number) => (
-                  <div key={i} className="grid grid-cols-2 border-b border-slate-100 last:border-0">
+                {submission.parties.map((p, i) => (
+                  <div key={i} className={`grid grid-cols-2 ${i < submission.parties.length - 1 ? 'border-b border-slate-100' : ''}`}>
                     <div className="px-3.5 py-2.5 text-sm text-slate-700">{p.type}</div>
                     <div className="px-3.5 py-2.5 text-sm text-slate-700 border-l border-slate-100 font-medium">{p.name}</div>
                   </div>
                 ))}
               </div>
+              <SectionDivider>Agreement Details</SectionDivider>
+              <ReadField label="SAP Cost Center" value={submission.sapCostCenter} />
+              <ReadField label="Scope of Agreement" value={submission.scopeOfAgreement} multiline />
+              <ReadField label="Term" value={submission.term} multiline />
               <div className="grid grid-cols-2 gap-4">
-                <ReadField label="NIC No" value={meta.nicNo || ''} />
-                <ReadField label="VAT Reg. No." value={meta.vatRegNo || ''} />
+                <ReadField label="Value (LKR)" value={submission.value} />
+                <ReadField label="Remarks" value={submission.remarks || ''} />
               </div>
-              <ReadField label="Contact (Lessor)" value={meta.lessorContact || ''} />
-              <SectionDivider>Lessee / Tenant Details</SectionDivider>
-              <ReadField label="Name of Lessee/Tenant" value={meta.leaseName || ''} />
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Premises bearing Asst. No" value={meta.premisesAssetNo || ''} />
-                <ReadField label="Period of Lease" value={meta.periodOfLease || ''} />
-              </div>
-              <SectionDivider>Asset &amp; Lease Details</SectionDivider>
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Asset Type</label>
-                <div className="flex items-center gap-3 flex-wrap">
-                  {meta.assetHouse && <span className="px-3 py-1 rounded-full bg-[#EEF3F8] text-[#1A438A] text-xs font-bold">House</span>}
-                  {meta.assetLand && <span className="px-3 py-1 rounded-full bg-[#EEF3F8] text-[#1A438A] text-xs font-bold">Land</span>}
-                  {meta.assetBuilding && <span className="px-3 py-1 rounded-full bg-[#EEF3F8] text-[#1A438A] text-xs font-bold">Building</span>}
-                  {meta.assetExtent && <span className="text-sm text-slate-500 ml-2">Extent: {meta.assetExtent}</span>}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Commencing from" value={meta.commencingFrom || ''} />
-                <ReadField label="Ending on" value={meta.endingOn || ''} />
-              </div>
-              <ReadField label="Monthly Rental Rs." value={meta.monthlyRental || ''} />
-              <div className="grid grid-cols-3 gap-4">
-                <ReadField label="Advance Payment Rs." value={meta.advancePayment || ''} />
-                <ReadField label="Deductible Rate Rs." value={meta.deductibleRate || ''} />
-                <ReadField label="Period" value={meta.deductiblePeriod || ''} />
-              </div>
-              <ReadField label="Refundable Deposit Rs." value={meta.refundableDeposit || ''} />
-              <ReadField label="Electricity, Water & Phone" value={meta.electricityWaterPhone || ''} />
-              <ReadField label="Renewal — Previous Agreement No" value={meta.previousAgreementNo || ''} />
-              <ReadField label="Date of Principal Agreement" value={meta.dateOfPrincipalAgreement || ''} />
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Buildings constructed?" value={meta.buildingsConstructed || ''} />
-                <ReadField label="Intend to construct?" value={meta.intendToConstruct || ''} />
-              </div>
-              <ReadField label="Remarks" value={meta.remarks || ''} />
+              <ReadField label="Initiator Comments" value={submission.initiatorComments || ''} />
             </div>
           </div>
         </div>
@@ -854,11 +740,9 @@ function LegalGMPageContent() {
               </button>
             </div>
             <div className="p-3 space-y-1.5">
-            {submission.documents.filter(doc => submission.parties.map(p => p.type).includes(doc.type) || doc.type === 'Common').map((doc, i) => (
-                <div key={doc.id}
-                  onClick={() => doc.fileUrl && window.open(doc.fileUrl, '_blank')}
-                  className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
-                  ${doc.fileUrl ? 'bg-emerald-50 border-emerald-200 cursor-pointer hover:bg-emerald-100' : 'bg-slate-50 border-slate-100 cursor-default'}`}>
+              {submission.documents.map((doc, i) => (
+                <div key={doc.id} className={`flex items-center justify-between rounded-lg px-3 py-2 border
+                  ${doc.fileUrl ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}>
                   <span className="text-[11px] text-slate-600 flex-1 mr-2 leading-tight">
                     <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}
                   </span>
@@ -874,18 +758,10 @@ function LegalGMPageContent() {
               </div>
               {stage === 'FINAL_APPROVAL' ? (
                 <div className="p-3">
-                  {(() => {
-                    const draftDoc = submission.documents.find((d) => d.label === 'Draft Agreement' || d.type === 'DRAFT');
-                    return draftDoc?.fileUrl ? (
-                      <button onClick={() => window.open(draftDoc.fileUrl!, '_blank')}
-                        className="flex items-center gap-2 w-full rounded-lg px-3 py-2.5 bg-[#EEF3F8] border border-[#1A438A]/20 hover:bg-[#dce8f3] transition-colors">
-                        <Eye className="w-4 h-4 text-[#1A438A]" />
-                        <span className="text-sm font-semibold text-[#1A438A]">Draft Agreement</span>
-                      </button>
-                    ) : (
-                      <p className="text-[11px] text-slate-400 italic px-1">No draft uploaded yet</p>
-                    );
-                  })()}
+                  <button className="flex items-center gap-2 w-full rounded-lg px-3 py-2.5 bg-[#EEF3F8] border border-[#1A438A]/20 hover:bg-[#dce8f3] transition-colors">
+                    <Eye className="w-4 h-4 text-[#1A438A]" />
+                    <span className="text-sm font-semibold text-[#1A438A]">Draft Agreement</span>
+                  </button>
                 </div>
               ) : (
                 <div className="px-4 py-3">
@@ -898,13 +774,11 @@ function LegalGMPageContent() {
           {/* Approvals */}
           <PanelSection title="Approvals"
             action={
-              !isInitial ? (
-                <button onClick={() => setShowSpecial(true)}
-                  className="text-[11px] font-bold px-3 py-1 rounded-full text-white transition-all active:scale-95"
-                  style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>
-                  Special Approvals {specialApprovers.length > 0 && `(${specialApprovers.length})`}
-                </button>
-              ) : undefined
+              <button onClick={() => setShowSpecial(true)}
+                className="text-[11px] font-bold px-3 py-1 rounded-full text-white transition-all active:scale-95"
+                style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>
+                Special Approvals {specialApprovers.length > 0 && `(${specialApprovers.length})`}
+              </button>
             }>
             <div className="px-4 py-3 divide-y divide-slate-100">
               {submission.approvals.map((a) => (
@@ -974,11 +848,13 @@ function LegalGMPageContent() {
                   <p className="text-[9px] text-slate-400 uppercase tracking-wider">Assigned Legal Officer</p>
                   <p className="text-xs font-bold text-[#17293E] truncate">{assignedOfficer.name || '—'}</p>
                 </div>
-                <button onClick={() => setShowReassign(true)} disabled={isActing}
+                {isInitial && (
+                  <button onClick={() => setShowReassign(true)} disabled={isActing}
                     className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-white flex-shrink-0 transition-all active:scale-95 disabled:opacity-50"
                     style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
-                  Reassign
-                </button>
+                    Reassign
+                  </button>
+                )}
               </div>
             </div>
 
@@ -1006,22 +882,7 @@ function LegalGMPageContent() {
 
       {/* ── Modals ── */}
       {showLog      && <ViewLogModal log={log} onClose={() => setShowLog(false)} />}
-      {showReassign && <ReassignModal currentOfficer={assignedOfficer.name} officers={legalOfficers} onSave={async (n, e) => {
-  setAssignedOfficer({ name: n, email: e });
-  if (submissionId) {
-    await fetch(`/api/submissions/${submissionId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        assignedLegalOfficer: legalOfficers.find(o => o.name === n)?.id || n,
-        ...(stage === 'FINAL_APPROVAL' && {
-          status: 'PENDING_LEGAL_OFFICER',
-          loStage: 'POST_GM_APPROVAL',
-        }),
-      }),
-    });
-  }
-}} onClose={() => setShowReassign(false)} />}
+      {showReassign && <ReassignModal currentOfficer={assignedOfficer.name} onSave={(n, e) => setAssignedOfficer({ name: n, email: e })} onClose={() => setShowReassign(false)} />}
       {showMoreDocs && <RequestMoreDocsModal onClose={() => setShowMoreDocs(false)} />}
       {showSpecial  && <SpecialApprovalsModal existing={specialApprovers} onSave={setSpecialApprovers} onClose={() => setShowSpecial(false)} />}
 
@@ -1063,16 +924,9 @@ function LegalGMPageContent() {
         />
       )}
 
-      {showSuccess === 'approve' && <SuccessModal title={stage === 'FINAL_APPROVAL' ? 'Completed!' : 'Approved!'} message={stage === 'FINAL_APPROVAL' ? 'The contract has been fully approved and completed.' : 'Request has been sent to the Legal Officer.'} submissionNo={submission.submissionNo} onClose={() => { setShowSuccess(null); router.push(ROUTES.LEGAL_GM_HOME); }} />}
+      {showSuccess === 'approve' && <SuccessModal title="Approved!" message="Contract review form has been approved." submissionNo={submission.submissionNo} onClose={() => { setShowSuccess(null); router.push(ROUTES.LEGAL_GM_HOME); }} />}
       {showSuccess === 'sendback' && <SuccessModal title="Sent Back!" message="Contract review form has been sent back." submissionNo={submission.submissionNo} onClose={() => { setShowSuccess(null); router.push(ROUTES.LEGAL_GM_HOME); }} />}
       {showSuccess === 'cancel'   && <SuccessModal title="Rejected!" message="Contract review form has been rejected and cancelled." submissionNo={submission.submissionNo} onClose={() => { setShowSuccess(null); router.push(ROUTES.LEGAL_GM_HOME); }} />}
     </div>
-  );
-}
-export default function LegalGMPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="text-gray-600">Loading...</div></div>}>
-      <LegalGMPageContent />
-    </Suspense>
   );
 }

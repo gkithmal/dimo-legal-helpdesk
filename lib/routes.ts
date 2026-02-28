@@ -4,6 +4,7 @@ export const ROUTES = {
   LEGAL_GM_HOME: '/legal-gm-home',
   SETTINGS: '/settings',
   FINANCE: '/finance',
+  SPECIAL_APPROVER_HOME: '/special-approver-home',
   FORM1: {
     INITIATOR: '/form1',
     APPROVAL: '/form1/approval',
@@ -15,11 +16,17 @@ export const ROUTES = {
     LEGAL_OFFICER_POST: '/form1/legal-officer?stage=POST_GM_APPROVAL',
     SPECIAL_APPROVER: '/special-approver-home',
   },
+  FORM3: {
+    INITIATOR: '/form3',
+    APPROVAL: '/form3/approval',
+    LEGAL_GM: '/form3/legal-gm',
+    LEGAL_OFFICER: '/form3/legal-officer',
+    COURT_OFFICER: '/form3/court-officer',
+  },
 } as const;
-
 export function getHomeRoute(role: string): string {
   if (role === 'LEGAL_GM') return ROUTES.LEGAL_GM_HOME;
   if (role === 'FINANCE') return ROUTES.FINANCE;
-  if (role === 'SPECIAL_APPROVER') return ROUTES.FORM1.SPECIAL_APPROVER;
+  if (role === 'SPECIAL_APPROVER') return ROUTES.SPECIAL_APPROVER_HOME;
   return ROUTES.HOME;
 }

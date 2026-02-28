@@ -246,7 +246,7 @@ function CancelModal({ onConfirm, onClose, loading }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 function Form2ApprovalPageContent() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const currentUserRole = (session?.user?.role as UserRole) ?? 'BUM';
   const currentUserName = session?.user?.name ?? '';
   const currentUserEmail = session?.user?.email ?? '';
@@ -373,6 +373,11 @@ function Form2ApprovalPageContent() {
   })();
 
   // ── Loading / error states ──
+    if (status === 'loading') return null;
+  if (status === 'authenticated' && !['BUM', 'FBP', 'CLUSTER_HEAD'].includes(session?.user?.role as string)) {
+    router.replace('/');
+    return null;
+  }
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#f0f4f9]">
       <div className="flex flex-col items-center gap-3">

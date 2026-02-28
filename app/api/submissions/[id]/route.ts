@@ -1,6 +1,9 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -26,6 +29,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const body = await req.json();
     const { status, loStage, legalGmStage, assignedLegalOfficer, documentId, fileUrl, documentStatus, scopeOfAgreement,
       ouLegalReviewCompleted, ouRegisteredDate, ouLegalRefNumber, ouDateOfExecution, ouDateOfExpiration,
@@ -57,8 +63,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       data: {
         ...(scopeOfAgreement !== undefined && { scopeOfAgreement }),
         ...(status && { status }),
-        ...(loStage && { loStage }),
-        ...(legalGmStage && { legalGmStage }),
+        ...(loStage !== undefined && { loStage }),
+        ...(legalGmStage !== undefined && { legalGmStage }),
         ...(assignedLegalOfficer !== undefined && { assignedLegalOfficer }),
         ...(ouLegalReviewCompleted !== undefined && { ouLegalReviewCompleted }),
         ...(ouRegisteredDate !== undefined && { ouRegisteredDate }),
@@ -91,6 +97,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
+
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const { label, type } = await req.json();
     const submissionId = (await params).id;
     const doc = await prisma.submissionDocument.create({
@@ -99,5 +108,28 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ success: true, data: doc });
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Failed to create document' }, { status: 500 });
+  }
+}
+
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await params;
+    // Only allow deleting DRAFT submissions
+    const submission = await prisma.submission.findUnique({ where: { id }, select: { status: true } });
+    if (!submission) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
+    if (submission.status !== 'DRAFT') return NextResponse.json({ success: false, error: 'Only drafts can be deleted' }, { status: 400 });
+
+    await prisma.$transaction([
+      prisma.submissionParty.deleteMany({ where: { submissionId: id } }),
+      prisma.submissionApproval.deleteMany({ where: { submissionId: id } }),
+      prisma.submissionDocument.deleteMany({ where: { submissionId: id } }),
+      prisma.submissionComment.deleteMany({ where: { submissionId: id } }),
+      prisma.submissionSpecialApprover.deleteMany({ where: { submissionId: id } }),
+      prisma.submission.delete({ where: { id } }),
+    ]);
+    return NextResponse.json({ success: true });
+  } catch (err) {
+    console.error('DELETE submission error:', err);
+    return NextResponse.json({ success: false, error: 'Failed to delete' }, { status: 500 });
   }
 }

@@ -26,7 +26,7 @@ export default function LoginPage() {
     }
   };
 
-  const DEV_USERS = [
+  const DEV_USERS = process.env.NODE_ENV === 'development' ? [
     { label: 'Initiator',     email: 'oliva.perera@testdimo.com' },
     { label: 'BUM',           email: 'grace.perera@testdimo.com' },
     { label: 'FBP',           email: 'madurika.sama@testdimo.com' },
@@ -36,7 +36,8 @@ export default function LoginPage() {
     { label: 'Spec. Approver', email: 'special.approver@testdimo.com' },
     { label: 'CEO',            email: 'ceo@testdimo.com' },
     { label: 'Finance',        email: 'finance.team@testdimo.com' },
-  ];
+    { label: 'Court Officer',  email: 'court.officer@testdimo.com' },
+  ] : [];
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#f0f4f9]"

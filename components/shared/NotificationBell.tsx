@@ -35,7 +35,7 @@ export default function NotificationBell() {
 
   useEffect(() => {
     if (!role) return;
-    fetch('/api/submissions')
+    const fetchNotifs = () => fetch('/api/submissions')
       .then(r => r.json())
       .then(data => {
         if (!data.success) return;
@@ -50,7 +50,7 @@ export default function NotificationBell() {
                 title: 'Approval Required',
                 subtitle: `${s.submissionNo} — ${s.title}`,
                 type: 'approval',
-                route: `/form1/approval?id=${s.id}`,
+                route: `/form${s.formId || 1}/approval?id=${s.id}`,
                 time: s.updatedAt,
               });
             }
@@ -62,7 +62,7 @@ export default function NotificationBell() {
               title: 'Resubmission Required',
               subtitle: `${s.submissionNo} was sent back`,
               type: 'resubmit',
-              route: `/form1?mode=resubmit&id=${s.id}`,
+              route: `/form${s.formId || 1}?mode=resubmit&id=${s.id}`,
               time: s.updatedAt,
             });
           }
@@ -73,7 +73,7 @@ export default function NotificationBell() {
               title: 'Pending Your Review',
               subtitle: `${s.submissionNo} — Initial Review`,
               type: 'approval',
-              route: `/form1/legal-gm?stage=INITIAL_REVIEW&id=${s.id}`,
+              route: `/form${s.formId || 1}/legal-gm?id=${s.id}`,
               time: s.updatedAt,
             });
           }
@@ -83,7 +83,40 @@ export default function NotificationBell() {
               title: 'Pending Final Approval',
               subtitle: `${s.submissionNo} — Final Sign-off`,
               type: 'approval',
-              route: `/form1/legal-gm?stage=FINAL_APPROVAL&id=${s.id}`,
+              route: `/form${s.formId || 1}/legal-gm?id=${s.id}`,
+              time: s.updatedAt,
+            });
+          }
+          // CEO: pending approval
+          if (role === 'CEO' && s.status === 'PENDING_CEO') {
+            items.push({
+              id: s.id,
+              title: 'CEO Approval Required',
+              subtitle: `${s.submissionNo} — ${s.formName || 'Lease Agreement'}`,
+              type: 'approval',
+              route: `/form${s.formId || 2}/ceo?id=${s.id}`,
+              time: s.updatedAt,
+            });
+          }
+          // Finance: completed submissions to view
+          if (role === 'FINANCE' && s.status === 'PENDING_LEGAL_GM_FINAL') {
+            items.push({
+              id: s.id,
+              title: 'New Submission',
+              subtitle: `${s.submissionNo} — Available for review`,
+              type: 'info',
+              route: `/finance?id=${s.id}`,
+              time: s.updatedAt,
+            });
+          }
+          // Court Officer: assigned submissions
+          if (role === 'COURT_OFFICER' && s.status === 'PENDING_COURT_OFFICER' && s.courtOfficerId === session?.user?.id) {
+            items.push({
+              id: s.id,
+              title: 'Action Required',
+              subtitle: `${s.submissionNo} — Court Action Needed`,
+              type: 'approval',
+              route: `/form${s.formId || 3}/court-officer?id=${s.id}`,
               time: s.updatedAt,
             });
           }
@@ -94,7 +127,7 @@ export default function NotificationBell() {
               title: 'Action Required',
               subtitle: `${s.submissionNo} — In Progress`,
               type: 'info',
-              route: `/form1/legal-officer?stage=ACTIVE&id=${s.id}`,
+              route: `/form${s.formId || 1}/legal-officer?stage=ACTIVE&id=${s.id}`,
               time: s.updatedAt,
             });
           }
@@ -107,7 +140,7 @@ export default function NotificationBell() {
                 title: 'Special Approval Needed',
                 subtitle: `${s.submissionNo} — ${s.title}`,
                 type: 'approval',
-                route: `/form1/special-approver?id=${s.id}`,
+                route: `/form${s.formId || 1}/special-approver?id=${s.id}`,
                 time: s.updatedAt,
               });
             }
@@ -116,6 +149,9 @@ export default function NotificationBell() {
         setNotifs(items);
       })
       .catch(() => {});
+    fetchNotifs();
+    const interval = setInterval(fetchNotifs, 30000);
+    return () => clearInterval(interval);
   }, [role, userId, session?.user?.email]);
 
   // Close on outside click

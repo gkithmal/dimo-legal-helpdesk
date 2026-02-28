@@ -1,6 +1,9 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/submissions
@@ -8,6 +11,9 @@ import { prisma } from '@/lib/prisma';
 // ─────────────────────────────────────────────────────────────────────────────
 export async function GET(req: NextRequest) {
   try {
+
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
     const initiatorId = searchParams.get('initiatorId');
@@ -58,6 +64,9 @@ export async function GET(req: NextRequest) {
 // ─────────────────────────────────────────────────────────────────────────────
 export async function POST(req: NextRequest) {
   try {
+
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const body = await req.json();
     const {
       formId,
@@ -73,6 +82,7 @@ export async function POST(req: NextRequest) {
       initiatorComments,
       initiatorId,
       legalOfficerId,
+      courtOfficerId,
       bumId,
       fbpId,
       clusterHeadId,
@@ -189,6 +199,24 @@ export async function POST(req: NextRequest) {
               documentsData.push({ label: d.label, type: d.types.includes('all') ? 'Common' : d.types[0], status: 'NONE' });
             }
           });
+      } else if ((formId || 1) === 3) {
+        // ── Form 3: Instruction For Litigation ──
+        const FORM3_BASE = [
+          'Original Agreement (if any)', 'Original Credit Application',
+          'Copy of the Letter of Demand (LOD)', 'Original Postal Article receipt for LOD',
+          'Copies of Letters Sent to the Customer', 'Original Letters Sent by the Customer',
+          'Originals Documents referred to in the Account statement',
+        ];
+        const FORM3_BY_TYPE: Record<string, string[]> = {
+          'Individual': ['NIC', 'Other (Individual)'],
+          'Sole-proprietorship': ['NIC/passport of the sole proprietor', 'Business registration/sole proprietorship certificate', 'Other (Sole proprietorship)'],
+          'Partnership': ['Partnership registration certificate', 'NIC/passport copies of every partner', 'Other (Partnership)'],
+          'Company': ['Incorporation Certificate of the Company', 'Form 1, 13 or any other document to prove the registered address', 'Any other company related documents'],
+        };
+        const typeSpecific = partyTypes.flatMap((t: string) => FORM3_BY_TYPE[t] || []);
+        [...typeSpecific, ...FORM3_BASE].forEach((label) => {
+          if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type: 'Common', status: 'NONE' }); }
+        });
       } else if (formConfig?.docs?.length) {
         formConfig.docs.forEach((doc) => {
           const normalizedType = doc.type.replace('-', ' ');
@@ -218,6 +246,16 @@ export async function POST(req: NextRequest) {
       }
 
             // ─── Create Submission with All Related Records ───
+      // Build approvals based on form type
+      const approvalsData: { role: string; approverName: string; approverEmail: string; status: string }[] = [
+        { role: 'BUM', approverName: bumName, approverEmail: '', status: 'PENDING' },
+        { role: 'FBP', approverName: fbpName, approverEmail: '', status: 'PENDING' },
+      ];
+      // Form 1 and others include Cluster Head
+      if ((formId || 1) !== 3) {
+        approvalsData.push({ role: 'CLUSTER_HEAD', approverName: clusterName, approverEmail: '', status: 'PENDING' });
+      }
+
       return await tx.submission.create({
         data: {
           submissionNo,
@@ -234,15 +272,15 @@ export async function POST(req: NextRequest) {
           initiatorComments: initiatorComments || '',
           initiatorId,
           assignedLegalOfficer: legalOfficerId || null,
+          courtOfficerId: courtOfficerId || null,
           parentId: parentId || null,
           isResubmission: isResubmission || false,
-          loStage: 'PENDING_GM',
+          loStage: (formId === 2 ? 'PENDING_CEO' : formId === 3 ? 'PENDING_LEGAL_GM' : 'PENDING_GM'),
           legalGmStage: 'INITIAL_REVIEW',
           bumId: bumId || null,
           fbpId: fbpId || null,
           clusterHeadId: clusterHeadId || null,
           dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
-          // Related records created in same transaction
           parties: {
             create: (parties as { type: string; name: string }[]).map((p) => ({
               type: p.type,
@@ -253,26 +291,7 @@ export async function POST(req: NextRequest) {
             create: documentsData,
           },
           approvals: {
-            create: [
-              {
-                role: 'BUM',
-                approverName: bumName,
-                approverEmail: '',
-                status: 'PENDING',
-              },
-              {
-                role: 'FBP',
-                approverName: fbpName,
-                approverEmail: '',
-                status: 'PENDING',
-              },
-              {
-                role: 'CLUSTER_HEAD',
-                approverName: clusterName,
-                approverEmail: '',
-                status: 'PENDING',
-              },
-            ],
+            create: approvalsData,
           },
         },
         include: {

@@ -277,7 +277,7 @@ function SpecialApproverForm1Content() {
   const submissionId  = searchParams.get('id');
   const router        = useRouter();
   const [showSignOut, setShowSignOut] = useState(false);
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
 
   const currentUserName = session?.user?.name ?? 'User';
   const firstName       = currentUserName.split(' ')[0];
@@ -309,10 +309,17 @@ function SpecialApproverForm1Content() {
   // ── Action state ──
   const [isActioning,      setIsActioning]      = useState(false);
   const [showApproveModal, setShowApproveModal] = useState(false);
+  const [hasActed,         setHasActed]         = useState(false);
   const [showRejectModal,  setShowRejectModal]  = useState(false);
   const [rejectReason,     setRejectReason]     = useState('');
   const [showSuccess,      setShowSuccess]      = useState(false);
   const [successMessage,   setSuccessMessage]   = useState('');
+
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && !['SPECIAL_APPROVER'].includes(session?.user?.role as string)) {
+    router.replace('/');
+    return null;
+  }
 
   // ── Load submission ──
   useEffect(() => {
@@ -362,9 +369,10 @@ function SpecialApproverForm1Content() {
       const res = await fetch(`/api/submissions/${submissionId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'APPROVE', role: 'SPECIAL_APPROVER', approverId: session?.user?.id }),
+        body: JSON.stringify({ action: 'APPROVED', role: 'SPECIAL_APPROVER', approverEmail: session?.user?.email, approverId: session?.user?.id }),
       });
       if (!res.ok) throw new Error('Approval failed');
+      setHasActed(true);
       setSuccessMessage('You have approved this request.');
       setShowApproveModal(false);
       setShowSuccess(true);
@@ -383,9 +391,10 @@ function SpecialApproverForm1Content() {
       const res = await fetch(`/api/submissions/${submissionId}/approve`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'REJECT', role: 'SPECIAL_APPROVER', approverId: session?.user?.id, comments: rejectReason }),
+        body: JSON.stringify({ action: 'SENT_BACK', role: 'SPECIAL_APPROVER', approverEmail: session?.user?.email, approverId: session?.user?.id, comment: rejectReason }),
       });
       if (!res.ok) throw new Error('Rejection failed');
+      setHasActed(true);
       setSuccessMessage('You have rejected this request.');
       setShowRejectModal(false);
       setShowSuccess(true);
@@ -630,11 +639,11 @@ function SpecialApproverForm1Content() {
             </button>
             {isPendingAction && (
               <>
-                <button onClick={() => setShowRejectModal(true)} className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 flex items-center justify-center gap-2"
+                <button onClick={() => setShowRejectModal(true)} disabled={isActioning || hasActed} className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 flex items-center justify-center gap-2"
                   style={{ background: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)' }}>
                   <ThumbsDown className="w-4 h-4" /> Reject
                 </button>
-                <button onClick={() => setShowApproveModal(true)} className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 flex items-center justify-center gap-2"
+                <button onClick={() => setShowApproveModal(true)} disabled={isActioning || hasActed} className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 flex items-center justify-center gap-2"
                   style={{ background: 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)' }}>
                   <ThumbsUp className="w-4 h-4" /> Approve
                 </button>
@@ -654,7 +663,7 @@ function SpecialApproverForm1Content() {
             <p className="text-slate-500 text-sm mb-6 leading-relaxed">This will mark your special approval as granted and advance the workflow.</p>
             <div className="flex gap-3 w-full">
               <button onClick={() => setShowApproveModal(false)} className="flex-1 py-2.5 rounded-xl border-2 border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50">Cancel</button>
-              <button onClick={handleApprove} disabled={isActioning} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
+              <button onClick={handleApprove} disabled={isActioning || hasActed} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
                 style={{ background: 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)' }}>
                 {isActioning ? 'Approving...' : 'Approve'}
               </button>
@@ -676,7 +685,7 @@ function SpecialApproverForm1Content() {
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10 mb-4" />
             <div className="flex gap-3">
               <button onClick={() => setShowRejectModal(false)} className="flex-1 py-2.5 rounded-xl border-2 border-slate-200 text-slate-600 font-bold text-sm hover:bg-slate-50">Cancel</button>
-              <button onClick={handleReject} disabled={isActioning || !rejectReason.trim()} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
+              <button onClick={handleReject} disabled={isActioning || hasActed || !rejectReason.trim()} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
                 style={{ background: 'linear-gradient(135deg, #dc2626 0%, #ef4444 100%)' }}>
                 {isActioning ? 'Rejecting...' : 'Reject'}
               </button>

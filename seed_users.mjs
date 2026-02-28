@@ -14,7 +14,7 @@ const USERS = [
   { name: 'Oliva Perera',     email: 'oliva.perera@testdimo.com',      role: 'INITIATOR' },
   { name: 'Grace Perera',     email: 'grace.perera@testdimo.com',      role: 'BUM' },
   { name: 'Madurika Sama',    email: 'madurika.sama@testdimo.com',     role: 'FBP' },
-  { name: 'Dimo CEO', email: 'ceo@testdimo.com', role: 'CEO' },
+  { name: 'Dimo CEO',         email: 'ceo@testdimo.com',               role: 'CEO' },
   { name: 'Mangala Wick',     email: 'mangala.wick@testdimo.com',      role: 'CLUSTER_HEAD' },
   { name: 'Sandalie Gomes',   email: 'sandalie.gomes@testdimo.com',    role: 'LEGAL_OFFICER' },
   { name: 'Dinali Guru',      email: 'dinali.guru@testdimo.com',       role: 'LEGAL_GM' },

@@ -1,0 +1,10 @@
+npx prisma db execute --stdin << 'SQL'
+DELETE FROM "submission_parties" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
+DELETE FROM "submission_approvals" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
+DELETE FROM "submission_documents" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
+DELETE FROM "submission_comments" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
+DELETE FROM "submission_special_approvers" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
+DELETE FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%';
+SQL
+
+bash tests/form2-qa/test_form2_full_qa.sh

@@ -461,7 +461,7 @@ function LegalGMPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const submissionId = searchParams.get('id');
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
 
   // ── Data state ──
   const [submission, setSubmission] = useState<Submission | null>(null);
@@ -493,6 +493,11 @@ function LegalGMPageContent() {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load');
       const s = data.data;
+      // Redirect to correct form if this submission belongs to a different form
+      if (s.formId && s.formId !== 1) {
+        router.replace(`/form${s.formId}/legal-gm?id=${submissionId}`);
+        return;
+      }
       setSubmission(s);
       const officerName = s.legalOfficerName || s.assignedLegalOfficer || '';
       setAssignedOfficer({ name: officerName, email: '' });
@@ -636,6 +641,11 @@ function LegalGMPageContent() {
   const steps = WORKFLOW_STEPS;
 
   // ── Loading / Error ──
+    if (status === 'loading') return null;
+  if (status === 'authenticated' && !['LEGAL_GM'].includes(session?.user?.role as string)) {
+    router.replace('/');
+    return null;
+  }
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#f0f4f9]">
       <div className="flex flex-col items-center gap-3">
@@ -970,11 +980,12 @@ function LegalGMPageContent() {
       {showReassign && <ReassignModal currentOfficer={assignedOfficer.name} officers={legalOfficers} onSave={async (n, e) => {
   setAssignedOfficer({ name: n, email: e });
   if (submissionId) {
+    const officerId = legalOfficers.find(o => o.name === n)?.id || n;
     await fetch(`/api/submissions/${submissionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        assignedLegalOfficer: n,
+        assignedLegalOfficer: officerId,
         ...(stage === 'FINAL_APPROVAL' && {
           status: 'PENDING_LEGAL_OFFICER',
           loStage: 'POST_GM_APPROVAL',

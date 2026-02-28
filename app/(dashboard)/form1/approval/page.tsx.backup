@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import NotificationBell from '@/components/shared/NotificationBell';
 import { ROUTES } from '@/lib/routes';
 import {
-  X, LogOut, Home, Lightbulb, Search, Settings, User,
+  X, Home, Bell, Lightbulb, Search, Settings, User,
   ArrowLeft, CheckCircle2, FileText, Clock, XCircle,
   RotateCcw, Send, Paperclip, AlertCircle, Loader2,
 } from 'lucide-react';
@@ -41,7 +40,6 @@ type Submission = {
   value: string;
   remarks?: string;
   initiatorComments?: string;
-  isResubmission?: boolean;
   assignedLegalOfficer?: string;
   parties: Party[];
   approvals: ApproverRecord[];
@@ -73,11 +71,11 @@ const ROLE_LABEL: Record<UserRole, string> = {
 
 const WORKFLOW_STEPS = [
   { label: 'Form\nSubmission' },
-  { label: 'First Level\nApprovals' },
+  { label: 'Approvals' },
   { label: 'Legal GM\nReview' },
-  { label: 'Legal Officer\nReview' },
-  { label: 'GM Final\nApproval' },
-  { label: 'Ready to\nCollect' },
+  { label: 'In\nProgress' },
+  { label: 'Legal GM\nApproval' },
+  { label: 'Ready\nto Collect' },
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -325,13 +323,12 @@ function CancelModal({ submissionNo, onConfirm, onClose, loading }: {
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-function Form1ApprovalPageContent() {
-  const { data: session, status } = useSession();
+export default function Form1ApprovalPage() {
+  const { data: session } = useSession();
   const currentUserRole = (session?.user?.role as UserRole) ?? 'BUM';
   const currentUserName = session?.user?.name ?? '';
   const currentUserEmail = session?.user?.email ?? '';
   const router = useRouter();
-  const [showSignOut, setShowSignOut] = useState(false);
   const searchParams = useSearchParams();
 
   // Read submissionId from URL: /form1/approval?id=cmlt1znsi0000...
@@ -470,11 +467,6 @@ function Form1ApprovalPageContent() {
     '#eab308';
 
   // ── Loading / Error states ──
-    if (status === 'loading') return null;
-  if (status === 'authenticated' && !['BUM', 'FBP', 'CLUSTER_HEAD'].includes(session?.user?.role as string)) {
-    router.replace('/');
-    return null;
-  }
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#f0f4f9]">
       <div className="flex flex-col items-center gap-3">
@@ -521,40 +513,19 @@ function Form1ApprovalPageContent() {
         </div>
         <div className="w-8 h-px bg-white/10" />
         <nav className="flex flex-col items-center gap-1 flex-1 w-full px-2">
-          <button onClick={() => router.push(ROUTES.HOME)} className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all" title="Home">
-            <Home className="w-[18px] h-[18px]" />
-          </button>
-          <button className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
-            <Lightbulb className="w-[18px] h-[18px]" />
-          </button>
-          <button className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
-            <Search className="w-[18px] h-[18px]" />
-          </button>
-          <NotificationBell />
+          {[Home, Bell, Lightbulb, Search].map((Icon, i) => (
+            <button key={i} className="relative w-full h-10 rounded-xl flex items-center justify-center text-white/50 hover:bg-white/10 hover:text-white transition-all">
+              <Icon className="w-[18px] h-[18px]" />
+              {i === 1 && <span className="absolute top-1.5 right-1.5 w-4 h-4 bg-red-500 rounded-full text-[9px] flex items-center justify-center text-white font-bold">2</span>}
+            </button>
+          ))}
         </nav>
         <div className="flex flex-col items-center gap-1 w-full px-2 mb-2">
-          <button className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all">
-            <Settings className="w-[18px] h-[18px]" />
-          </button>
-          <button onClick={() => setShowSignOut(true)} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all" title="Sign Out">
-            <User className="w-[18px] h-[18px]" />
-          </button>
-        {showSignOut && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSignOut(false)} />
-            <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xs p-7 flex flex-col items-center text-center">
-              <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center mb-4">
-                <LogOut className="w-7 h-7 text-red-500" />
-              </div>
-              <h3 className="text-[#17293E] font-bold text-base mb-1">Sign Out?</h3>
-              <p className="text-slate-500 text-sm mb-6">You will be redirected to the login page.</p>
-              <div className="flex gap-3 w-full">
-                <button onClick={() => setShowSignOut(false)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
-                <button onClick={() => { setShowSignOut(false); router.push('/login'); }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>Sign Out</button>
-              </div>
-            </div>
-          </div>
-        )}
+          {[Settings, User].map((Icon, i) => (
+            <button key={i} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all">
+              <Icon className="w-[18px] h-[18px]" />
+            </button>
+          ))}
         </div>
       </aside>
 
@@ -577,12 +548,6 @@ function Form1ApprovalPageContent() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                {submission.isResubmission && (
-                  <span className="text-[11px] font-bold px-3 py-1 rounded-full border bg-amber-400/25 text-amber-200 border-amber-400/40 flex items-center gap-1.5 animate-pulse">
-                    <RotateCcw className="w-3 h-3" />
-                    Resubmission
-                  </span>
-                )}
                 <span className="text-[11px] font-semibold px-3 py-1 rounded-full border bg-blue-500/20 text-blue-200 border-blue-400/30">
                   Pending Approval
                 </span>
@@ -661,19 +626,7 @@ function Form1ApprovalPageContent() {
               {WORKFLOW_STEPS.map((step, i) => {
                 const isApprovalStep = i === 1;
                 const dotColor = isApprovalStep ? approvalStepColor : i === 0 ? '#1A438A' : '#cbd5e1';
-                // Map DB status to active step index
-                const statusToStep: Record<string, number> = {
-                  PENDING_APPROVAL:       1,
-                  PENDING_LEGAL_GM:         2,
-                  PENDING_LEGAL_OFFICER:    3,
-                  PENDING_SPECIAL_APPROVER: 3,
-                  PENDING_LEGAL_GM_FINAL:   4,
-                  COMPLETED:                5,
-                  SENT_BACK:                1,
-                  CANCELLED:                1,
-                };
-                const activeStep = statusToStep[submission?.status ?? ''] ?? 1;
-                const isActive = i <= activeStep;
+                const isActive = i <= 1;
                 return (
                   <div key={i} className="relative flex flex-col items-center z-10" style={{ width: `${100 / WORKFLOW_STEPS.length}%` }}>
                     <div className="w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all shadow-sm"
@@ -696,21 +649,16 @@ function Form1ApprovalPageContent() {
               <span className="text-white text-sm font-semibold">Required Documents</span>
             </div>
             <div className="p-3 space-y-1.5">
-            {submission.documents.map((doc, i) => (
-              <div
-                key={doc.id}
-                onClick={() => doc.fileUrl && window.open(doc.fileUrl, '_blank')}
-                className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
-                  ${doc.fileUrl
-                    ? 'bg-emerald-50 border-emerald-200 cursor-pointer hover:bg-emerald-100 hover:shadow-sm'
-                    : 'bg-slate-50 border-slate-100 cursor-default'}`}>
-                <span className="text-[11px] text-slate-600 flex-1 mr-2">
-                  <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}
-                </span>
-                {doc.fileUrl
-                  ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
-                  : <Paperclip className="w-4 h-4 text-slate-300 flex-shrink-0" />}
-              </div>
+              {submission.documents.map((doc, i) => (
+                <div key={doc.id} className={`flex items-center justify-between rounded-lg px-3 py-2 border
+                  ${doc.fileUrl ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}>
+                  <span className="text-[11px] text-slate-600 flex-1 mr-2">
+                    <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}
+                  </span>
+                  {doc.fileUrl
+                    ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                    : <Paperclip className="w-4 h-4 text-slate-300 flex-shrink-0" />}
+                </div>
               ))}
             </div>
             <div className="border-t border-slate-100">
@@ -873,12 +821,5 @@ function Form1ApprovalPageContent() {
         />
       )}
     </div>
-  );
-}
-export default function Form1ApprovalPage() {
-  return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="text-gray-600">Loading...</div></div>}>
-      <Form1ApprovalPageContent />
-    </Suspense>
   );
 }

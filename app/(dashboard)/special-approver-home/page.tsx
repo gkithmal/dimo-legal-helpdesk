@@ -32,7 +32,7 @@ type ApprovalItem = {
 };
 
 type SubmissionItem = {
-  id: string; requestNo: string; formTitle: string; formType: string;
+  id: string; requestNo: string; formTitle: string; formType: string; formId: number;
   submittedDate: string; status: SubmissionFilter; lastUpdated: string;
 };
 
@@ -252,7 +252,7 @@ function SubmissionsPanel({ items, loading, onClose, onNavigate }: {
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-[#91ADC5]"><FileText className="w-10 h-10 mb-3 opacity-30" /><p className="text-sm">No submissions found</p></div>
           ) : filtered.map((item) => (
-            <button key={item.id} onClick={() => { onClose(); onNavigate(`/form1?mode=${item.status === 'RESUBMIT' ? 'resubmit' : 'view'}&id=${item.id}`); }} className={`w-full text-left px-6 py-4 hover:bg-[#1183B7]/10 transition-colors group border-l-4 ${SUBMISSION_BORDER[item.status]}`}>
+            <button key={item.id} onClick={() => { onClose(); onNavigate(`/form${item.formId}?mode=${item.status === 'RESUBMIT' ? 'resubmit' : 'view'}&id=${item.id}`); }} className={`w-full text-left px-6 py-4 hover:bg-[#1183B7]/10 transition-colors group border-l-4 ${SUBMISSION_BORDER[item.status]}`}>
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1"><span className="text-[#91ADC5] text-xs font-mono">{item.requestNo}</span><span className="text-[#AC9C2F] text-xs font-semibold">{item.formType}</span></div>
@@ -275,11 +275,16 @@ function SubmissionsPanel({ items, loading, onClose, onNavigate }: {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SpecialApproverHomePage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const currentUserName = session?.user?.name ?? 'User';
   const currentUserId   = session?.user?.id   ?? '';
   const currentUserEmail = session?.user?.email ?? '';
   const router = useRouter();
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && !['SPECIAL_APPROVER'].includes(session?.user?.role as string)) {
+    router.replace('/');
+    return null;
+  }
 
   type TabType = 'workflows' | 'submissions' | 'approvals' | null;
   const [activeTab, setActiveTab] = useState<TabType>(null);
@@ -302,7 +307,7 @@ export default function SpecialApproverHomePage() {
         setSubmissions(
           all.filter((s: any) => s.initiatorId === currentUserId).map((s: any) => ({
             id: s.id, requestNo: s.submissionNo, formTitle: s.formName,
-            formType: `FORM ${s.formId}`, submittedDate: formatDate(s.createdAt),
+            formId: s.formId, formType: `FORM ${s.formId}`, submittedDate: formatDate(s.createdAt),
             status: DB_TO_SUBMISSION[s.status] || 'ONGOING', lastUpdated: formatDate(s.updatedAt),
           }))
         );

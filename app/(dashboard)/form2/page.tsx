@@ -127,6 +127,38 @@ function TextField({ value, onChange, placeholder, disabled, hasError, allowedCh
   );
 }
 
+function CurrencyField({ value, onChange, disabled, hasError }: {
+  value: string; onChange: (v: string) => void; disabled?: boolean; hasError?: boolean;
+}) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const stripped = e.target.value.replace(/,/g, '');
+    if (!/^\d*\.?\d{0,2}$/.test(stripped)) return;
+    const parts = stripped.split('.');
+    const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    onChange(parts.length > 1 ? `${intPart}.${parts[1].slice(0, 2)}` : intPart);
+  };
+  const handleBlur = () => {
+    if (!value) return;
+    const stripped = value.replace(/,/g, '');
+    const num = parseFloat(stripped);
+    if (!isNaN(num)) {
+      const intPart = Math.floor(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      const cents = stripped.includes('.') ? stripped.split('.')[1].padEnd(2, '0').slice(0, 2) : '00';
+      onChange(`${intPart}.${cents}`);
+    }
+  };
+  return (
+    <div className="relative">
+      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-semibold select-none pointer-events-none">Rs.</span>
+      <input type="text" inputMode="decimal" value={value} onChange={handleChange} onBlur={handleBlur}
+        disabled={disabled} placeholder="0.00"
+        className={`w-full pl-10 pr-3.5 py-2.5 rounded-lg border text-sm font-mono focus:outline-none transition-all
+          ${disabled ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : 'bg-white'}
+          ${hasError ? 'border-red-400 ring-2 ring-red-400/10 focus:outline-none' : 'border-slate-200 hover:border-[#4686B7] focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'}`} />
+    </div>
+  );
+}
+
 function SelectField({ value, onChange, options, placeholder, disabled, hasError }: {
   value: string; onChange: (v: string) => void; options: string[];
   placeholder?: string; disabled?: boolean; hasError?: boolean;
@@ -495,9 +527,9 @@ function Form2PageContent() {
     if (!endingOn)                errors.push('Ending on date is required');
     if (commencingFrom && endingOn && new Date(endingOn) <= new Date(commencingFrom)) errors.push('Ending on date must be after Commencing from date');
     if (!monthlyRental.trim())    errors.push('Monthly Rental is required');
-    else if (!/^[0-9,]+$/.test(monthlyRental.trim())) errors.push('Monthly Rental must be a number (e.g. 100,000)');
+    else if (isNaN(parseFloat(monthlyRental.replace(/,/g, '')))) errors.push('Monthly Rental must be a valid amount');
     if (!refundableDeposit.trim()) errors.push('Refundable Deposit is required');
-    else if (!/^[0-9,]+$/.test(refundableDeposit.trim())) errors.push('Refundable Deposit must be a number (e.g. 175,000)');
+    else if (isNaN(parseFloat(refundableDeposit.replace(/,/g, '')))) errors.push('Refundable Deposit must be a valid amount');
     if (!electricityWaterPhone.trim()) errors.push('Electricity, Water & Phone is required');
     if (!buildingsConstructed)    errors.push('Please indicate if buildings are fully or partly constructed');
     if (!intendToConstruct)       errors.push('Please indicate if you intend to construct any building');
@@ -568,7 +600,6 @@ function Form2PageContent() {
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Server error: ${res.status}`); }
 
       const data = await res.json();
-      console.log('[Form2 submit response]', JSON.stringify(data).slice(0, 300));
       const no = data.data?.submissionNo || data.submissionNo || "";
       if (no) setSubmissionNo(no);
       else console.warn('[Form2] submissionNo missing from response', data);
@@ -746,7 +777,7 @@ function Form2PageContent() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <FieldLabel required>NIC No</FieldLabel>
-                  <TextField value={nicNo} onChange={setNicNo} placeholder="e.g. 978657354V" disabled={isReadOnly} hasError={hasError('nic')} />
+                  <TextField value={nicNo} onChange={(v) => setNicNo(v.replace(/[^a-zA-Z0-9]/g, ''))} placeholder="e.g. 978657354V" disabled={isReadOnly} hasError={hasError('nic')} />
                   <FieldError message={hasError('nic') ? 'NIC No is required' : undefined} />
                 </div>
                 <div>
@@ -834,7 +865,7 @@ function Form2PageContent() {
               {/* Monthly Rental */}
               <div>
                 <FieldLabel required>Monthly Rental Rs.</FieldLabel>
-                <TextField value={monthlyRental} onChange={setMonthlyRental} placeholder="e.g. 100,000" disabled={isReadOnly} hasError={hasError('monthly rental')} allowedChars={/^[0-9,\.]*$/} />
+                <CurrencyField value={monthlyRental} onChange={setMonthlyRental} disabled={isReadOnly} hasError={hasError('monthly rental')} />
                 <FieldError message={hasError('monthly rental') ? 'Monthly Rental is required' : undefined} />
               </div>
 
@@ -842,11 +873,11 @@ function Form2PageContent() {
               <div className="grid grid-cols-3 gap-4">
                 <div>
                   <FieldLabel>Advance Payment Rs.</FieldLabel>
-                  <TextField value={advancePayment} onChange={setAdvancePayment} placeholder="e.g. 150,000" disabled={isReadOnly} allowedChars={/^[0-9,\.]*$/} />
+                  <CurrencyField value={advancePayment} onChange={setAdvancePayment} disabled={isReadOnly} />
                 </div>
                 <div>
                   <FieldLabel>Deductible Rate Rs.</FieldLabel>
-                  <TextField value={deductibleRate} onChange={setDeductibleRate} placeholder="e.g. 50,000" disabled={isReadOnly} allowedChars={/^[0-9,\.]*$/} />
+                  <CurrencyField value={deductibleRate} onChange={setDeductibleRate} disabled={isReadOnly} />
                 </div>
                 <div>
                   <FieldLabel>Period</FieldLabel>
@@ -857,7 +888,7 @@ function Form2PageContent() {
               {/* Refundable Deposit */}
               <div>
                 <FieldLabel required>Refundable Deposit Rs.</FieldLabel>
-                <TextField value={refundableDeposit} onChange={setRefundableDeposit} placeholder="e.g. 175,000" disabled={isReadOnly} hasError={hasError('refundable')} allowedChars={/^[0-9,\.]*$/} />
+                <CurrencyField value={refundableDeposit} onChange={setRefundableDeposit} disabled={isReadOnly} hasError={hasError('refundable')} />
                 <FieldError message={hasError('refundable') ? 'Refundable Deposit is required' : undefined} />
               </div>
 

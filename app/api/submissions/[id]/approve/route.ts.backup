@@ -1,15 +1,9 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
-
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
-
-    const session = await getServerSession(authOptions);
-    if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const body = await req.json();
     const {
       role, action, comment,
@@ -71,41 +65,27 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // ── LEGAL GM ───────────────────────────────────────────────────────────
     if (role === 'LEGAL_GM') {
       const isFinal = submission.legalGmStage === 'FINAL_APPROVAL' || submission.status === 'PENDING_LEGAL_GM_FINAL';
-      const isForm3 = submission.formId === 3;
 
       if (action === 'APPROVED') {
         if (isFinal) {
-          if (isForm3) {
-            // Form 3: after final GM approval → Court Officer does final confirmation
-            await prisma.submission.update({
-              where: { id },
-              data: {
-                status: 'PENDING_COURT_OFFICER',
-                loStage: 'POST_GM_APPROVAL',
-                updatedAt: new Date(),
-              },
-            });
-          } else {
-            // Form 2: after final GM approval → Legal Officer finalizes directly
-            await prisma.submission.update({
-              where: { id },
-              data: {
-                status: 'PENDING_LEGAL_OFFICER',
-                loStage: 'FINALIZATION',
-                updatedAt: new Date(),
-              },
-            });
-          }
+          // Final approval → Court Officer comes back for final confirmation
+          await prisma.submission.update({
+            where: { id },
+            data: {
+              status: 'PENDING_COURT_OFFICER',
+              loStage: 'POST_GM_APPROVAL',
+              updatedAt: new Date(),
+            },
+          });
         } else {
-          // Initial OK to Proceed
+          // Initial review: OK to Proceed → Legal Officer to assign Court Officer
           await prisma.submission.update({
             where: { id },
             data: {
               status: 'PENDING_LEGAL_OFFICER',
               legalGmStage: 'INITIAL_REVIEW',
               assignedLegalOfficer: assignedOfficer || submission.assignedLegalOfficer || '',
-              // Form 3 gets Court Officer stage, Form 2 goes straight to initial review
-              loStage: isForm3 ? 'ASSIGN_COURT_OFFICER' : 'INITIAL_REVIEW',
+              loStage: 'ASSIGN_COURT_OFFICER',
               updatedAt: new Date(),
             },
           });

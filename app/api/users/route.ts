@@ -1,9 +1,13 @@
 export const dynamic = "force-dynamic";
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const { searchParams } = new URL(req.url);
     const role = searchParams.get('role');
     const users = await prisma.user.findMany({
@@ -23,6 +27,8 @@ export async function GET(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
+    const session = await getServerSession(authOptions);
+    if (!session || !['ADMIN','LEGAL_GM','LEGAL_OFFICER'].includes(session.user.role as string)) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const body = await req.json();
     const { id, role, department } = body;
     if (!id) return NextResponse.json({ success: false, error: 'Missing id' }, { status: 400 });

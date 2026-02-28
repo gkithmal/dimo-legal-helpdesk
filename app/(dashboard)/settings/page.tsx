@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 
 type Role = 'Legal GM'|'Legal Officer'|'Special Approver'|'Approver - BUM'|'Approver - FBP'|'Approver - Cluster Head'|'Initiator'|'';
-type StaffMember = { id:string; name:string; email:string; role:Role; forms:number[]; };
+type StaffMember = { id:string; name:string; email:string; role:Role; forms:number[]; isActive:boolean; };
 type DirectoryUser = { id:string; name:string; email:string; role:string; };
 type RequiredDoc = { id:string; label:string; type:string; };
 type FormConfig = { formId:number; formName:string; docs:RequiredDoc[]; instructions:string; };
@@ -69,12 +69,13 @@ function LegalStaffTab() {
   const [editing,setEditing]=useState(false);
   const [editRole,setEditRole]=useState<Role>('');
   const [editForms,setEditForms]=useState<number[]>([]);
+  const [editIsActive,setEditIsActive]=useState<boolean>(true);
   const loadUsers=useCallback(async()=>{
     setLoadingStaff(true);setApiError('');
     try{
       const res=await fetch('/api/users');const data=await res.json();
       if(!res.ok||!data.success)throw new Error(data.error||'Failed to load users');
-      const mapped:StaffMember[]=data.data.map((u:{id:string;name:string;email:string;role:string;formIds?:number[]})=>({id:u.id,name:u.name,email:u.email,role:(u.role as Role)||'',forms:u.formIds||[]}));
+      const mapped:StaffMember[]=data.data.map((u:{id:string;name:string;email:string;role:string;formIds?:number[];isActive?:boolean})=>({id:u.id,name:u.name,email:u.email,role:(u.role as Role)||'',forms:u.formIds||[],isActive:u.isActive!==false}));
       setStaff(mapped);
       if(mapped.length>0)setSelectedId((prev)=>prev||mapped[0].id);
       setDirectory(data.data.map((u:{id:string;name:string;email:string;role:string})=>({id:u.id,name:u.name,email:u.email,role:u.role})));
@@ -83,20 +84,20 @@ function LegalStaffTab() {
   },[]);
   useEffect(()=>{loadUsers();},[]);// eslint-disable-line react-hooks/exhaustive-deps
   const selected=staff.find((s)=>s.id===selectedId)||null;
-  const selectMember=(s:StaffMember)=>{setSelectedId(s.id);setEditing(false);setEditRole(s.role);setEditForms(s.forms);};
+  const selectMember=(s:StaffMember)=>{setSelectedId(s.id);setEditing(false);setEditRole(s.role);setEditForms(s.forms);setEditIsActive(s.isActive);};
   const addFromDirectory=(dir:DirectoryUser)=>{
     const existing=staff.find((s)=>s.id===dir.id);
     if(existing){selectMember(existing);setShowDirDropdown(false);return;}
-    const nm:StaffMember={id:dir.id,name:dir.name,email:dir.email,role:'',forms:[]};
+    const nm:StaffMember={id:dir.id,name:dir.name,email:dir.email,role:'',forms:[],isActive:true};
     setStaff((prev)=>[...prev,nm]);setSelectedId(nm.id);setEditRole('');setEditForms([]);setEditing(true);setShowDirDropdown(false);
   };
   const saveChanges=async()=>{
     if(!selectedId||!selected)return;setSaving(true);setApiError('');
     try{
-      const res=await fetch(`/api/users/${selectedId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:editRole,formIds:editForms})});
+      const res=await fetch(`/api/users/${selectedId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({role:editRole,formIds:editForms,isActive:editIsActive})});
       const data=await res.json();
       if(!res.ok||!data.success)throw new Error(data.error||'Save failed');
-      setStaff((prev)=>prev.map((s)=>s.id===selectedId?{...s,role:editRole,forms:editForms}:s));
+      setStaff((prev)=>prev.map((s)=>s.id===selectedId?{...s,role:editRole,forms:editForms,isActive:editIsActive}:s));
       setEditing(false);setSavedUser(selected.name);setShowSaved(true);
     }catch(err:unknown){setApiError(err instanceof Error?err.message:'Save failed');}
     finally{setSaving(false);}
@@ -168,6 +169,14 @@ function LegalStaffTab() {
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"/>
           </div>
+          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Account Status</div>
+          <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-slate-200 shadow-sm -mt-2">
+            <button type="button" disabled={!editing} onClick={()=>setEditIsActive(!editIsActive)}
+              className={`relative w-10 h-5 rounded-full transition-colors flex-shrink-0 ${editing?'cursor-pointer':'cursor-not-allowed'} ${(editing?editIsActive:selected?.isActive)?'bg-[#1A438A]':'bg-slate-300'}`}>
+              <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${(editing?editIsActive:selected?.isActive)?'translate-x-5':'translate-x-0.5'}`}/>
+            </button>
+            <span className="text-sm font-medium text-slate-700">{(editing?editIsActive:selected?.isActive)?'Active':'Inactive'}</span>
+          </div>
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 -mb-2">Form Allocation</div>
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm flex-1 min-h-0 overflow-y-auto">
             <div className="divide-y divide-slate-100">
@@ -184,7 +193,7 @@ function LegalStaffTab() {
           <div className="flex gap-3">
             <button onClick={()=>router.push(ROUTES.LEGAL_GM_HOME)} className="px-8 py-2.5 rounded-xl font-bold text-sm text-white" style={{background:'linear-gradient(135deg, #1A438A, #1e5aad)'}}>Back</button>
             {!editing
-              ?<button onClick={()=>{setEditing(true);setEditRole(selected.role);setEditForms(selected.forms);}} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white" style={{background:'linear-gradient(135deg, #AC9C2F, #c9b535)'}}>EDIT</button>
+              ?<button onClick={()=>{setEditing(true);setEditRole(selected.role);setEditForms(selected.forms);setEditIsActive(selected.isActive);}} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white" style={{background:'linear-gradient(135deg, #AC9C2F, #c9b535)'}}>EDIT</button>
               :<button onClick={saveChanges} disabled={saving} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white flex items-center justify-center gap-2 disabled:opacity-70" style={{background:'linear-gradient(135deg, #AC9C2F, #c9b535)'}}>
                 {saving?<><Loader2 className="w-4 h-4 animate-spin"/>Saving...</>:<><Save className="w-4 h-4"/>Save Changes</>}
               </button>

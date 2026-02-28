@@ -67,7 +67,10 @@ const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEA
 
 function mapLoStage(dbStage: string): LOStage {
   if (dbStage === 'ACTIVE')           return 'ACTIVE';
+  if (dbStage === 'INITIAL_REVIEW')   return 'ACTIVE';
+  if (dbStage === 'REVIEW_FOR_GM')    return 'ACTIVE';
   if (dbStage === 'POST_GM_APPROVAL') return 'POST_GM_APPROVAL';
+  if (dbStage === 'FINALIZATION')     return 'POST_GM_APPROVAL';
   if (dbStage === 'REASSIGNED')       return 'REASSIGNED';
   return 'PENDING_GM';
 }
@@ -462,6 +465,38 @@ function AddDocumentModal({ onAdd, onClose }: { onAdd: (name: string, type: 'ini
   );
 }
 
+function CurrencyField({ value, onChange, disabled, hasError }: {
+  value: string; onChange: (v: string) => void; disabled?: boolean; hasError?: boolean;
+}) {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const stripped = e.target.value.replace(/,/g, '');
+    if (!/^\d*\.?\d{0,2}$/.test(stripped)) return;
+    const parts = stripped.split('.');
+    const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    onChange(parts.length > 1 ? `${intPart}.${parts[1].slice(0, 2)}` : intPart);
+  };
+  const handleBlur = () => {
+    if (!value) return;
+    const stripped = value.replace(/,/g, '');
+    const num = parseFloat(stripped);
+    if (!isNaN(num)) {
+      const intPart = Math.floor(num).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+      const cents = stripped.includes('.') ? stripped.split('.')[1].padEnd(2, '0').slice(0, 2) : '00';
+      onChange(`${intPart}.${cents}`);
+    }
+  };
+  return (
+    <div className="relative">
+      <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-sm font-semibold select-none pointer-events-none">Rs.</span>
+      <input type="text" inputMode="decimal" value={value} onChange={handleChange} onBlur={handleBlur}
+        disabled={disabled} placeholder="0.00"
+        className={`w-full pl-10 pr-3.5 py-2.5 rounded-lg border text-sm font-mono focus:outline-none transition-all
+          ${disabled ? 'bg-slate-50 text-slate-500 cursor-not-allowed' : 'bg-white'}
+          ${hasError ? 'border-red-400 ring-2 ring-red-400/10 focus:outline-none' : 'border-slate-200 hover:border-[#4686B7] focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'}`} />
+    </div>
+  );
+}
+
 function Form2FinalizationModal({ submissionNo, submissionId, onClose, onComplete }: {
   submissionNo: string; submissionId: string; onClose: () => void; onComplete: () => void;
 }) {
@@ -541,13 +576,11 @@ function Form2FinalizationModal({ submissionNo, submissionId, onClose, onComplet
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Stamp Duty Rs. <span className="text-red-400">*</span></label>
-              <input type="number" value={stampDuty} onChange={e => setStampDuty(e.target.value)} placeholder="e.g. 25000"
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10" />
+              <CurrencyField value={stampDuty} onChange={setStampDuty} />
             </div>
             <div>
               <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Legal Fees Rs. <span className="text-red-400">*</span></label>
-              <input type="number" value={legalFees} onChange={e => setLegalFees(e.target.value)} placeholder="e.g. 15000"
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10" />
+              <CurrencyField value={legalFees} onChange={setLegalFees} />
             </div>
           </div>
           <div>
@@ -800,7 +833,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
 function LegalOfficerPageContent() {
   const router = useRouter();
   const [showSignOut, setShowSignOut] = useState(false);
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const searchParams = useSearchParams();
   const submissionId = searchParams.get('id');
 
@@ -1032,6 +1065,11 @@ function LegalOfficerPageContent() {
   );
 
   // ── Loading / Error ──
+    if (status === 'loading') return null;
+  if (status === 'authenticated' && !['LEGAL_OFFICER'].includes(session?.user?.role as string)) {
+    router.replace('/');
+    return null;
+  }
   if (isLoading) return (
     <div className="min-h-screen flex items-center justify-center bg-[#f0f4f9]">
       <div className="flex flex-col items-center gap-3">
@@ -1093,7 +1131,7 @@ function LegalOfficerPageContent() {
           <button onClick={() => setShowSignOut(true)} className="w-full h-10 rounded-xl flex items-center justify-center text-white/40 hover:bg-white/10 hover:text-white transition-all" title="Sign Out">
             <User className="w-[18px] h-[18px]" />
           </button>
-        {showSignOut && (
+        {false && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSignOut(false)} />
             <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xs p-7 flex flex-col items-center text-center">
@@ -1111,6 +1149,20 @@ function LegalOfficerPageContent() {
         )}
         </div>
       </aside>
+      {showSignOut && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSignOut(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xs p-7 flex flex-col items-center text-center">
+            <div className="w-14 h-14 rounded-2xl bg-red-100 flex items-center justify-center mb-4"><LogOut className="w-7 h-7 text-red-500" /></div>
+            <h3 className="text-[#17293E] font-bold text-base mb-1">Sign Out?</h3>
+            <p className="text-slate-500 text-sm mb-6">You will be redirected to the login page.</p>
+            <div className="flex gap-3 w-full">
+              <button onClick={() => setShowSignOut(false)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={() => { setShowSignOut(false); router.push("/login"); }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white" style={{ background: "linear-gradient(135deg, #ef4444, #dc2626)" }}>Sign Out</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Main ── */}
       <div className="flex-1 flex gap-5 p-5 overflow-auto min-w-0">
@@ -1126,13 +1178,13 @@ function LegalOfficerPageContent() {
                   <FileText className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-white font-bold text-base">Contract Review Form</h1>
+                  <h1 className="text-white font-bold text-base">Lease Agreement</h1>
                   <p className="text-white/50 text-[11px] mt-0.5 font-mono">16/FM/1641/07/01</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <span className={`text-[11px] font-semibold px-3 py-1 rounded-full border ${stageColor}`}>{stageLabel}</span>
-                <div className="bg-white text-[#1A438A] font-bold text-sm px-4 py-2 rounded-xl">Form 1</div>
+                <div className="bg-white text-[#1A438A] font-bold text-sm px-4 py-2 rounded-xl">Form 2</div>
               </div>
             </div>
           </div>
@@ -1189,13 +1241,59 @@ function LegalOfficerPageContent() {
                 ))}
               </div>
               <SectionDivider>Agreement Details</SectionDivider>
-              <ReadField label="SAP Cost Center" value={submission.sapCostCenter} />
-              <ReadField label="Scope of Agreement" value={submission.scopeOfAgreement} multiline />
-              <ReadField label="Term" value={submission.term} multiline />
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Value (LKR)" value={submission.value} />
-                <ReadField label="Remarks" value={submission.remarks || ''} />
-              </div>
+              {(() => {
+                const meta = (() => { try { return JSON.parse(submission.scopeOfAgreement || '{}'); } catch { return {}; } })();
+                return (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Contact Person" value={meta.contactPerson || ''} />
+                      <ReadField label="Contact No" value={meta.contactNo || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Dept. SAP Code" value={meta.deptSapCode || ''} />
+                      <ReadField label="Purpose of Lease" value={meta.purposeOfLease || ''} />
+                    </div>
+                    <ReadField label="NIC No" value={meta.nicNo || ''} />
+                    <ReadField label="VAT Reg. No." value={meta.vatRegNo || ''} />
+                    <ReadField label="Contact (Lessor)" value={meta.lessorContact || ''} />
+                    <ReadField label="Name of Lessee/Tenant" value={meta.leaseName || ''} />
+                    <ReadField label="Premises bearing Asst. No" value={meta.premisesAssetNo || ''} />
+                    <ReadField label="Period of Lease" value={meta.periodOfLease || ''} />
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Commencing From" value={meta.commencingFrom || ''} />
+                      <ReadField label="Ending On" value={meta.endingOn || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Monthly Rental Rs." value={meta.monthlyRental || ''} />
+                      <ReadField label="Advance Payment Rs." value={meta.advancePayment || ''} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <ReadField label="Deductible Rate Rs." value={meta.deductibleRate || ''} />
+                      <ReadField label="Deductible Period" value={meta.deductiblePeriod || ''} />
+                      <ReadField label="Refundable Deposit Rs." value={meta.refundableDeposit || ''} />
+                    </div>
+                    <ReadField label="Electricity/Water/Phone" value={meta.electricityWaterPhone || ''} />
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Previous Agreement No" value={meta.previousAgreementNo || ''} />
+                      <ReadField label="Date of Principal Agreement" value={meta.dateOfPrincipalAgreement || ''} />
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Asset Type</p>
+                      <div className="flex gap-2 flex-wrap">
+                        {meta.assetHouse && <span className="px-3 py-1 rounded-full bg-[#EEF3F8] text-[#1A438A] text-xs font-bold">House</span>}
+                        {meta.assetLand && <span className="px-3 py-1 rounded-full bg-[#EEF3F8] text-[#1A438A] text-xs font-bold">Land</span>}
+                        {meta.assetBuilding && <span className="px-3 py-1 rounded-full bg-[#EEF3F8] text-[#1A438A] text-xs font-bold">Building</span>}
+                        {meta.assetExtent && <span className="text-sm text-slate-500 ml-2">Extent: {meta.assetExtent}</span>}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Buildings Constructed" value={meta.buildingsConstructed === 'yes' ? 'Yes' : 'No'} />
+                      <ReadField label="Intend to Construct" value={meta.intendToConstruct === 'yes' ? 'Yes' : 'No'} />
+                    </div>
+                    <ReadField label="Remarks" value={meta.remarks || ''} />
+                  </div>
+                );
+              })()}
               <ReadField label="Initiator Comments" value={submission.initiatorComments || ''} />
             </div>
           </div>
@@ -1266,14 +1364,18 @@ function LegalOfficerPageContent() {
                     ${doc.status === 'ATTENTION' ? 'bg-yellow-50 border-yellow-300'
                     : doc.status === 'RESUBMIT'  ? 'bg-red-50 border-red-200'
                     : doc.status === 'OK'         ? 'bg-emerald-50 border-emerald-200'
+                    : doc.hasFile                 ? 'bg-blue-50 border-blue-200'
                     : 'bg-slate-50 border-slate-100 hover:border-[#1A438A]/20'}`}>
                   <span className={`text-[11px] flex-1 mr-2 leading-tight
                     ${doc.status === 'ATTENTION' ? 'text-yellow-800 font-semibold'
-                    : doc.status === 'RESUBMIT' ? 'text-red-700 font-semibold' : 'text-slate-600'}`}>
+                    : doc.status === 'RESUBMIT' ? 'text-red-700 font-semibold'
+                    : doc.hasFile ? 'text-blue-700' : 'text-slate-600'}`}>
                     <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}
                   </span>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    {doc.hasFile && <FileText className="w-3.5 h-3.5 text-slate-400 cursor-pointer hover:text-blue-500" onClick={() => setViewingDoc(docs.find(d => d.id === doc.id) ?? null)} />}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {doc.hasFile
+                      ? <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-600 border border-blue-200">UPLOADED</span>
+                      : <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 border border-slate-200">MISSING</span>}
                     {doc.status !== 'NONE' ? <DocStatusIcon status={doc.status} /> : <Paperclip className="w-3.5 h-3.5 text-slate-300" />}
                   </div>
                 </button>

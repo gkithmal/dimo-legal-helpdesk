@@ -1,31 +1,31 @@
 #!/bin/bash
 
-#bash tests/form2-qa/test_form2_full_qa.sh  
-#Paste above in the terminal 
-
 # ══════════════════════════════════════════════════════════════════════════════
 # Form 2 Full QA Test Suite
-#
-# HOW TO RUN:
-#   From the project root (dimo-legal-helpdesk/), run:
-#     bash tests/form2-qa/test_form2_full_qa.sh
-#
-# PREREQUISITES:
-#   - Dev server must be running:  npm run dev
-#   - Run from project root directory
-#
-# TO CLEAN UP TEST DATA BEFORE RUNNING:
-#   npx prisma db execute --stdin <<'SQL'
-#   DELETE FROM "submission_parties" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
-#   DELETE FROM "submission_approvals" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
-#   DELETE FROM "submission_documents" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
-#   DELETE FROM "submission_comments" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
-#   DELETE FROM "submission_special_approvers" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
-#   DELETE FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%';
-#   SQL
+# USAGE: bash tests/form2-qa/test_form2_full_qa.sh
+# Run from project root. Dev server must be running: npm run dev
 # ══════════════════════════════════════════════════════════════════════════════
 
 BASE="http://localhost:3000"
+
+# ─── Pre-flight: check server is up ───────────────────────────────────────────
+if ! curl -s --max-time 3 "$BASE/api/auth/csrf" > /dev/null 2>&1; then
+  echo -e "\033[0;31m❌ Dev server is not running. Start it with: npm run dev\033[0m"
+  exit 1
+fi
+
+# ─── Auto cleanup QA test data before every run ───────────────────────────────
+echo -e "\033[1;33m🧹 Cleaning up previous QA test data...\033[0m"
+npx prisma db execute --stdin <<'SQL' 2>/dev/null
+DELETE FROM "submission_parties"           WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
+DELETE FROM "submission_approvals"         WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
+DELETE FROM "submission_documents"         WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
+DELETE FROM "submission_comments"          WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
+DELETE FROM "submission_special_approvers" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_%');
+DELETE FROM "submissions"                  WHERE "submissionNo" LIKE 'LHD_QA_%';
+SQL
+echo -e "\033[0;32m✅ Cleanup done\033[0m"
+
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; NC='\033[0m'; BLUE='\033[0;34m'; CYAN='\033[0;36m'
 pass()    { echo -e "${GREEN}✅ $1${NC}"; }
 fail()    { echo -e "${RED}❌ $1${NC}"; }
@@ -245,12 +245,12 @@ F2_RES=$(curl -s -b /tmp/c_lo.txt -X PATCH "$BASE/api/submissions/$SUB" \
 api_ok "$F2_RES" && track_pass "F2 finalization PATCH succeeded ✓" || { track_fail "F2 finalization failed"; echo "    $(echo $F2_RES | python3 -m json.tool)"; }
 
 subsect "A12: Verify f2 fields persisted"
-check_field "f2StampDuty"    $SUB "25000"
-check_field "f2LegalFees"    $SUB "15000"
-check_field "f2ReferenceNo"  $SUB "REF/2026/001"
+check_field "f2StampDuty"     $SUB "25000"
+check_field "f2LegalFees"     $SUB "15000"
+check_field "f2ReferenceNo"   $SUB "REF/2026/001"
 check_field "f2BoardApproval" $SUB "True"
-check_field "f2Remarks"      $SUB "All documents verified. Stamp duty paid."
-check_field "status"         $SUB "COMPLETED"
+check_field "f2Remarks"       $SUB "All documents verified. Stamp duty paid."
+check_field "status"          $SUB "COMPLETED"
 
 # ══════════════════════════════════════════════════════════════════════════════
 section "TEST B: Draft Save & Edit"
@@ -324,11 +324,11 @@ subsect "D1: Only BUM approves — should stay PENDING_APPROVAL"
 RES=$(make_sub "LHD_QA_F2_PAR_001" "PENDING_APPROVAL")
 PAR=$(get_id "$RES")
 approve /tmp/c_bum.txt $PAR BUM APPROVED "BUM only approval"
-check_status $PAR "PENDING_APPROVAL"  # not yet — FBP and CH still pending
+check_status $PAR "PENDING_APPROVAL"
 
 subsect "D2: FBP also approves — should still stay PENDING_APPROVAL"
 approve /tmp/c_fbp.txt $PAR FBP APPROVED "FBP approval (2 of 3)"
-check_status $PAR "PENDING_APPROVAL"  # still waiting for CH
+check_status $PAR "PENDING_APPROVAL"
 
 subsect "D3: Cluster Head approves — NOW should move to PENDING_CEO"
 approve /tmp/c_ch.txt $PAR CLUSTER_HEAD APPROVED "CH approval (3 of 3 — triggers transition)"
@@ -362,10 +362,10 @@ RPARENT=$(echo $RESUB | python3 -c "import sys,json; print(json.load(sys.stdin).
 RFLAG=$(echo $RESUB  | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('isResubmission',''))")
 RVALUE=$(echo $RESUB | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('value',''))")
 
-[ -n "$RID" ]           && track_pass "Resubmission created: $RID ✓"    || track_fail "Resubmission failed"
-[ "$RPARENT" = "$SUB" ] && track_pass "parentId linked correctly ✓"      || track_fail "parentId wrong: $RPARENT"
-[ "$RFLAG" = "True" ]   && track_pass "isResubmission = True ✓"          || track_fail "isResubmission flag wrong: $RFLAG"
-[ "$RVALUE" = "175000" ] && track_pass "Updated lkrValue = 175000 ✓"     || track_fail "lkrValue wrong: $RVALUE"
+[ -n "$RID" ]            && track_pass "Resubmission created: $RID ✓"  || track_fail "Resubmission failed"
+[ "$RPARENT" = "$SUB" ]  && track_pass "parentId linked correctly ✓"   || track_fail "parentId wrong: $RPARENT"
+[ "$RFLAG" = "True" ]    && track_pass "isResubmission = True ✓"        || track_fail "isResubmission flag wrong: $RFLAG"
+[ "$RVALUE" = "175000" ] && track_pass "Updated lkrValue = 175000 ✓"   || track_fail "lkrValue wrong: $RVALUE"
 
 subsect "E2: Mark original as RESUBMITTED"
 MR=$(curl -s -b /tmp/c_initiator.txt -X PATCH "$BASE/api/submissions/$SUB" \
@@ -395,7 +395,6 @@ section "TEST G: Document Verification"
 # ══════════════════════════════════════════════════════════════════════════════
 
 subsect "G1: Documents created with correct types for Individual lessor"
-# Re-login initiator to ensure fresh session for document tests
 login "initiator@testdimo.com" /tmp/c_initiator.txt
 RES=$(make_sub "LHD_QA_F2_DOCS_001" "PENDING_APPROVAL")
 info "G1 raw response: $(echo $RES | cut -c1-200)"
@@ -410,15 +409,15 @@ info "Documents for Individual lessor:"
 echo "$DOC_DATA" | while IFS='|' read TYPE LABEL; do echo "    [$TYPE] $LABEL"; done
 DOC_COUNT=$(echo "$DOC_DATA" | grep -c "|")
 [ "$DOC_COUNT" -eq "25" ] && track_pass "Doc count = 25 (23 common + 2 individual) ✓" || track_fail "Expected 25 docs, got $DOC_COUNT"
-echo "$DOC_DATA" | grep -q "Offer Letter from the landowner" && track_pass "Mandatory: Offer Letter ✓" || track_fail "Missing: Offer Letter"
-echo "$DOC_DATA" | grep -q "Copy of the Title Deed" && track_pass "Mandatory: Title Deed ✓" || track_fail "Missing: Title Deed"
-echo "$DOC_DATA" | grep -q "Copy of the Approved Survey Plan" && track_pass "Mandatory: Survey Plan ✓" || track_fail "Missing: Survey Plan"
-echo "$DOC_DATA" | grep -q "Certificate of Conformity" && track_pass "Mandatory: Certificate of Conformity ✓" || track_fail "Missing: Certificate of Conformity"
-echo "$DOC_DATA" | grep -q "Extracts from Land Registry" && track_pass "Mandatory: Land Registry Extracts ✓" || track_fail "Missing: Land Registry Extracts"
-echo "$DOC_DATA" | grep -q "NIC (Individual owner)" && track_pass "Individual: NIC present ✓" || track_fail "Missing: NIC (Individual owner)"
-echo "$DOC_DATA" | grep -q "Other (Individual)" && track_pass "Individual: Other present ✓" || track_fail "Missing: Other (Individual)"
-echo "$DOC_DATA" | grep -q "Certificate of Incorporation" && track_fail "WRONG: Certificate of Incorporation (Form 1 doc!) found" || track_pass "No Form 1 doc contamination ✓"
-echo "$DOC_DATA" | grep -q "Form 1 (Company Registration)" && track_fail "WRONG: Form 1 Company Registration found" || track_pass "No legacy Form 1 labels ✓"
+echo "$DOC_DATA" | grep -q "Offer Letter from the landowner"  && track_pass "Mandatory: Offer Letter ✓"              || track_fail "Missing: Offer Letter"
+echo "$DOC_DATA" | grep -q "Copy of the Title Deed"           && track_pass "Mandatory: Title Deed ✓"                || track_fail "Missing: Title Deed"
+echo "$DOC_DATA" | grep -q "Copy of the Approved Survey Plan" && track_pass "Mandatory: Survey Plan ✓"               || track_fail "Missing: Survey Plan"
+echo "$DOC_DATA" | grep -q "Certificate of Conformity"        && track_pass "Mandatory: Certificate of Conformity ✓" || track_fail "Missing: Certificate of Conformity"
+echo "$DOC_DATA" | grep -q "Extracts from Land Registry"      && track_pass "Mandatory: Land Registry Extracts ✓"    || track_fail "Missing: Land Registry Extracts"
+echo "$DOC_DATA" | grep -q "NIC (Individual owner)"           && track_pass "Individual: NIC present ✓"              || track_fail "Missing: NIC (Individual owner)"
+echo "$DOC_DATA" | grep -q "Other (Individual)"               && track_pass "Individual: Other present ✓"            || track_fail "Missing: Other (Individual)"
+echo "$DOC_DATA" | grep -q "Certificate of Incorporation"     && track_fail "WRONG: Certificate of Incorporation (Form 1 doc!) found" || track_pass "No Form 1 doc contamination ✓"
+echo "$DOC_DATA" | grep -q "Form 1 (Company Registration)"    && track_fail "WRONG: Form 1 Company Registration found"               || track_pass "No legacy Form 1 labels ✓"
 
 subsect "G1e: Company lessor gets 28 docs (23 common + 5 company)"
 RES_CO=$(curl -s -b /tmp/c_initiator.txt -X POST "$BASE/api/submissions" \
@@ -427,10 +426,10 @@ RES_CO=$(curl -s -b /tmp/c_initiator.txt -X POST "$BASE/api/submissions" \
 CO_SUB=$(get_id "$RES_CO")
 CO_DOCS=$(get_sub $CO_SUB | python3 -c "import sys,json; docs=json.load(sys.stdin).get('data',{}).get('documents',[]); print(len(docs)); [print(d['label']) for d in docs]")
 CO_COUNT=$(echo "$CO_DOCS" | head -1)
-[ "$CO_COUNT" -eq "28" ] && track_pass "Company: 28 docs ✓" || track_fail "Company: expected 28, got $CO_COUNT"
-echo "$CO_DOCS" | grep -q "Board Resolution" && track_pass "Company: Board Resolution ✓" || track_fail "Missing: Board Resolution"
-echo "$CO_DOCS" | grep -q "Memorandum and Article" && track_pass "Company: Memorandum ✓" || track_fail "Missing: Memorandum"
-echo "$CO_DOCS" | grep -q "Form 20" && track_pass "Company: Form 20 ✓" || track_fail "Missing: Form 20"
+[ "$CO_COUNT" -eq "28" ] && track_pass "Company: 28 docs ✓"        || track_fail "Company: expected 28, got $CO_COUNT"
+echo "$CO_DOCS" | grep -q "Board Resolution"          && track_pass "Company: Board Resolution ✓" || track_fail "Missing: Board Resolution"
+echo "$CO_DOCS" | grep -q "Memorandum and Article"    && track_pass "Company: Memorandum ✓"       || track_fail "Missing: Memorandum"
+echo "$CO_DOCS" | grep -q "Form 20"                   && track_pass "Company: Form 20 ✓"          || track_fail "Missing: Form 20"
 
 subsect "G2: Update document status (Legal Officer marks doc)"
 DOC_ID=$(get_sub $DOCS_SUB | python3 -c "import sys,json; docs=json.load(sys.stdin).get('data',{}).get('documents',[]); print(docs[0]['id'] if docs else '')")
@@ -608,7 +607,6 @@ DOCC_IND=$(get_id "$RES")
 IND_COUNT=$(get_sub $DOCC_IND | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',{}).get('documents',[])))")
 [ "$IND_COUNT" -eq "25" ] && track_pass "Individual lessor doc count = 25 ✓" || track_fail "Individual doc count wrong: $IND_COUNT (expected 25)"
 
-# Check mandatory docs present
 IND_LABELS=$(get_sub $DOCC_IND | python3 -c "import sys,json; docs=json.load(sys.stdin).get('data',{}).get('documents',[]); print('\n'.join(d['label'] for d in docs))")
 for MANDATORY in "Offer Letter from the landowner" "Copy of the Title Deed" "Survey Plan" "NIC (Individual owner)"; do
   echo "$IND_LABELS" | grep -q "$MANDATORY" \
@@ -616,7 +614,6 @@ for MANDATORY in "Offer Letter from the landowner" "Copy of the Title Deed" "Sur
     || track_fail "Mandatory doc MISSING: '$MANDATORY'"
 done
 
-# Check no Form 1 contamination
 for F1_DOC in "Certificate of Incorporation" "Form 1 Company Registration"; do
   echo "$IND_LABELS" | grep -q "$F1_DOC" \
     && track_fail "Form 1 doc contamination: '$F1_DOC'" \
@@ -650,4 +647,3 @@ for COMP_DOC in "Board Resolution" "Memorandum and Article of Association" "Form
     && track_pass "Company doc present: '$COMP_DOC' ✓" \
     || track_fail "Company doc MISSING: '$COMP_DOC'"
 done
-

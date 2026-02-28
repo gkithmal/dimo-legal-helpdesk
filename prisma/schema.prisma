@@ -93,6 +93,14 @@ model Submission {
   f2ReferenceNo        String?
   f2BoardApproval      Boolean? @default(false)
   f2Remarks            String?
+  // Form 3 fields
+  courtOfficerId       String?
+  f3GmcApprovalNo      String?
+  f3CaseNo             String?
+  f3CaseFillingDate    String?
+  f3Council            String?
+  f3Court              String?
+  f3Remarks            String?
   ouSavedAt            DateTime?
   financeViewedAt      DateTime?
   bumId                String?

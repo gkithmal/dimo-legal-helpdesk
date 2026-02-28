@@ -5,12 +5,12 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
   FileText, LogOut, X, Search, ChevronRight, Clock,
-  AlertCircle, CheckCircle2, XCircle, RotateCcw, Loader2, Eye} from "lucide-react";
+  AlertCircle, CheckCircle2, XCircle, RotateCcw, Loader2, Eye, Trash2} from "lucide-react";
 import { Button } from '@/components/ui/button';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type UserRole = 'INITIATOR' | 'BUM' | 'FBP' | 'CLUSTER_HEAD' | 'LEGAL_GM' | 'LEGAL_OFFICER' | 'CEO';
+type UserRole = 'INITIATOR' | 'BUM' | 'FBP' | 'CLUSTER_HEAD' | 'LEGAL_GM' | 'LEGAL_OFFICER' | 'CEO' | 'COURT_OFFICER' | 'SPECIAL_APPROVER';
 type ApprovalFilter = 'PENDING' | 'APPROVED' | 'MY_REJECTIONS' | 'OTHER_REJECTIONS' | 'ALL';
 type SubmissionFilter = 'ALL' | 'APPROVAL_PENDING' | 'ONGOING' | 'COMPLETED' | 'RESUBMIT' | 'CANCELLED' | 'DRAFT' | 'RESUBMITTED';
 
@@ -28,7 +28,7 @@ type SubmissionItem = { id: string; requestNo: string; formTitle: string; formTy
 const FORMS = [
   { id: 1,  title: 'FORM 1',  description: 'Contract Review Form',                      color: 'bg-orange-500', route: '/form1' },
   { id: 2,  title: 'FORM 2',  description: 'Lease Agreement',                            color: 'bg-orange-400', route: '/form2' },
-  { id: 3,  title: 'FORM 3',  description: 'Instruction For Litigation',                 color: 'bg-red-400',    route: '/form3' },
+  { id: 3,  title: 'FORM 3',  description: 'Instruction For Litigation',                  color: 'bg-red-400',    route: '/form3' },
   { id: 4,  title: 'FORM 4',  description: 'Vehicle Rent Agreement',                     color: 'bg-pink-400',   route: '/form4' },
   { id: 5,  title: 'FORM 5',  description: 'Request for Power of Attorney',              color: 'bg-purple-500', route: '/form5' },
   { id: 6,  title: 'FORM 6',  description: 'Registration of a Trademark',                color: 'bg-yellow-500', route: '/form6' },
@@ -73,7 +73,7 @@ function formatDate(iso: string) {
 function getRoleLabel(role: UserRole): string {
   const map: Record<UserRole, string> = {
     INITIATOR: 'Initiator', BUM: 'BUM', FBP: 'FBP',
-    CLUSTER_HEAD: 'Cluster Head', LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer', CEO: 'CEO',
+    CLUSTER_HEAD: 'Cluster Head', LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer', CEO: 'CEO', COURT_OFFICER: 'Court Officer', SPECIAL_APPROVER: 'Special Approver',
   };
   return map[role];
 }
@@ -191,7 +191,21 @@ function ApprovalsPanel({ items, loading, onClose, onNavigate }: { items: Approv
 }
 
 
-function DraftsPanel({ items, loading, onClose, onNavigate }: { items: SubmissionItem[]; loading: boolean; onClose: () => void; onNavigate: (route: string) => void }) {
+function DraftsPanel({ items, loading, onClose, onNavigate, onDelete }: { items: SubmissionItem[]; loading: boolean; onClose: () => void; onNavigate: (route: string) => void; onDelete: (id: string) => void }) {
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleDelete = async (id: string) => {
+    setDeleting(true);
+    try {
+      await fetch(`/api/submissions/${id}`, { method: 'DELETE' });
+      onDelete(id);
+    } finally {
+      setDeleting(false);
+      setConfirmDelete(null);
+    }
+  };
+
   return (
     <div className="absolute inset-0 z-50 flex items-start justify-center pt-16 px-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -206,23 +220,54 @@ function DraftsPanel({ items, loading, onClose, onNavigate }: { items: Submissio
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-[#91ADC5]"><FileText className="w-10 h-10 mb-3 opacity-30" /><p className="text-sm">No drafts saved yet</p></div>
           ) : items.map((item) => (
-            <button key={item.id} onClick={() => { onClose(); onNavigate(`/form${item.formType.replace('FORM ', '')}?mode=draft&id=${item.id}`); }} className="w-full text-left px-6 py-4 hover:bg-[#1183B7]/10 transition-colors group border-l-4 border-l-slate-400">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1"><span className="text-[#91ADC5] text-xs font-mono">{item.requestNo}</span><span className="text-[#AC9C2F] text-xs font-semibold">{item.formType}</span></div>
-                  <p className="text-white text-sm font-semibold truncate mb-1.5">{item.formTitle}</p>
-                  <div className="flex items-center gap-3 text-xs text-[#91ADC5]"><span>Started {item.submittedDate}</span><span>•</span><span>Last saved {item.lastUpdated}</span></div>
+            <div key={item.id} className="flex items-center border-l-4 border-l-slate-400 hover:bg-[#1183B7]/10 transition-colors group">
+              <button onClick={() => { onClose(); onNavigate(`/form${item.formType.replace('FORM ', '')}?mode=draft&id=${item.id}`); }} className="flex-1 text-left px-6 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1"><span className="text-[#91ADC5] text-xs font-mono">{item.requestNo}</span><span className="text-[#AC9C2F] text-xs font-semibold">{item.formType}</span></div>
+                    <p className="text-white text-sm font-semibold truncate mb-1.5">{item.formTitle}</p>
+                    <div className="flex items-center gap-3 text-xs text-[#91ADC5]"><span>Started {item.submittedDate}</span><span>•</span><span>Last saved {item.lastUpdated}</span></div>
+                  </div>
+                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border bg-slate-500/20 text-slate-300 border-slate-500/40">Draft</span>
+                    <ChevronRight className="w-4 h-4 text-[#91ADC5] group-hover:text-white transition-all" />
+                  </div>
                 </div>
-                <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border bg-slate-500/20 text-slate-300 border-slate-500/40">Draft</span>
-                  <ChevronRight className="w-4 h-4 text-[#91ADC5] group-hover:text-white transition-all" />
-                </div>
-              </div>
-            </button>
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); setConfirmDelete(item.id); }}
+                className="mr-4 w-8 h-8 rounded-lg flex items-center justify-center text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition-all flex-shrink-0"
+                title="Delete draft">
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
           ))}
         </div>
         <div className="px-6 py-3 border-t border-[#1183B7]/20 bg-[#17293E]/80 text-center"><p className="text-[#91ADC5] text-xs">{items.length} draft{items.length !== 1 ? 's' : ''} saved</p></div>
       </div>
+
+      {confirmDelete && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={() => setConfirmDelete(null)} />
+          <div className="relative bg-[#17293E] border border-[#1183B7]/50 rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <div className="w-12 h-12 rounded-xl bg-red-500/20 flex items-center justify-center mx-auto mb-4">
+              <Trash2 className="w-6 h-6 text-red-400" />
+            </div>
+            <h3 className="text-white font-bold text-base mb-2">Delete Draft?</h3>
+            <p className="text-[#91ADC5] text-sm mb-6">This draft will be permanently deleted and cannot be recovered.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setConfirmDelete(null)} disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl font-bold text-sm border border-[#1183B7]/40 text-[#91ADC5] hover:bg-white/5 transition-all">
+                Cancel
+              </button>
+              <button onClick={() => handleDelete(confirmDelete)} disabled={deleting}
+                className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white bg-red-500 hover:bg-red-600 transition-all flex items-center justify-center gap-2">
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -281,12 +326,18 @@ function SubmissionsPanel({ items, loading, onClose, onNavigate }: { items: Subm
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function HomePage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const currentRole = (session?.user?.role as UserRole) ?? 'INITIATOR';
   const currentUserName = session?.user?.name ?? 'User';
   const currentUserId = session?.user?.id ?? '';
   const router = useRouter();
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && !['INITIATOR', 'BUM', 'FBP', 'CLUSTER_HEAD', 'LEGAL_GM', 'LEGAL_OFFICER', 'CEO', 'COURT_OFFICER', 'FINANCE'].includes(session?.user?.role as string)) {
+    router.replace('/');
+    return null;
+  }
   const isApprover = currentRole !== 'INITIATOR';
+  const isInitiator = currentRole === 'INITIATOR' || currentRole === 'LEGAL_OFFICER';
 
   type TabType = 'workflows' | 'submissions' | 'approvals' | 'drafts' | null;
   const [activeTab, setActiveTab] = useState<TabType>(null);
@@ -308,7 +359,7 @@ export default function HomePage() {
 
         // ── My Submissions (initiator view — all statuses) ─────────────────
         setSubmissions(
-          all.filter((s: any) => s.initiatorId === currentUserId && s.status !== 'RESUBMITTED').map((s: any) => ({
+          all.filter((s: any) => s.initiatorId === currentUserId && s.status !== 'RESUBMITTED' && s.status !== 'DRAFT').map((s: any) => ({
             id: s.id, requestNo: s.submissionNo, formTitle: s.formName,
             formType: `FORM ${s.formId}`, submittedDate: formatDate(s.createdAt),
             status: DB_TO_SUBMISSION[s.status] || 'ONGOING', lastUpdated: formatDate(s.updatedAt),
@@ -343,6 +394,8 @@ export default function HomePage() {
 
             if (currentRole === 'LEGAL_OFFICER')
               return all.filter((s: any) => s.assignedLegalOfficer === currentUserId && s.status !== 'RESUBMITTED');
+            if (currentRole === 'COURT_OFFICER')
+              return all.filter((s: any) => s.courtOfficerId === currentUserId && s.status !== 'RESUBMITTED');
 
             if (currentRole === 'CEO')
               return all.filter((s: any) => s.status === 'PENDING_CEO' && s.status !== 'RESUBMITTED');
@@ -383,7 +436,9 @@ export default function HomePage() {
 
               const route =
                 currentRole === 'LEGAL_OFFICER' ? `/form${s.formId}/legal-officer?id=${s.id}` :
-                currentRole === 'LEGAL_GM'       ? `/form${s.formId}/legal-gm?id=${s.id}` :
+                currentRole === 'COURT_OFFICER'  ? `/form${s.formId}/court-officer?id=${s.id}` :
+                currentRole === 'SPECIAL_APPROVER' ? `/form${s.formId}/special-approver?id=${s.id}` :
+              currentRole === 'LEGAL_GM'       ? `/form${s.formId}/legal-gm?id=${s.id}` :
                 currentRole === 'CEO'            ? `/form${s.formId}/ceo?id=${s.id}` :
                                                    `/form${s.formId}/approval?id=${s.id}`;
 
@@ -405,12 +460,16 @@ export default function HomePage() {
             if (currentRole === 'LEGAL_GM')
               return ['PENDING_LEGAL_GM', 'PENDING_LEGAL_GM_FINAL'].includes(s.status);
             if (currentRole === 'LEGAL_OFFICER')
-              return s.status === 'PENDING_LEGAL_OFFICER';
+              return s.status === 'PENDING_LEGAL_OFFICER' || s.loStage === 'FINALIZATION';
+            if (currentRole === 'COURT_OFFICER')
+              return s.status === 'PENDING_COURT_OFFICER';
+            if (currentRole === 'SPECIAL_APPROVER')
+              return s.status === 'PENDING_SPECIAL_APPROVER';
             return false;
           };
 
-          // LO, GM and CEO also see all their past submissions (view only)
-          const workflowSubmissions = (currentRole === 'LEGAL_OFFICER' || currentRole === 'LEGAL_GM' || currentRole === 'CEO')
+          // LO, GM, CEO and Court Officer also see all their past submissions (view only)
+          const workflowSubmissions = (currentRole === 'LEGAL_OFFICER' || currentRole === 'LEGAL_GM' || currentRole === 'CEO' || currentRole === 'COURT_OFFICER' || currentRole === 'SPECIAL_APPROVER')
             ? mySubmissions
             : mySubmissions.filter((s: any) => needsAction(s));
 
@@ -424,7 +483,9 @@ export default function HomePage() {
               isOverdue: needsAction(s) && s.dueDate ? new Date() > new Date(s.dueDate) : false,
               route:
                 currentRole === 'LEGAL_OFFICER' ? `/form${s.formId}/legal-officer?id=${s.id}` :
-                currentRole === 'LEGAL_GM'       ? `/form${s.formId}/legal-gm?id=${s.id}` :
+                currentRole === 'COURT_OFFICER'  ? `/form${s.formId}/court-officer?id=${s.id}` :
+                currentRole === 'SPECIAL_APPROVER' ? `/form${s.formId}/special-approver?id=${s.id}` :
+              currentRole === 'LEGAL_GM'       ? `/form${s.formId}/legal-gm?id=${s.id}` :
                 currentRole === 'CEO'           ? `/form${s.formId}/ceo?id=${s.id}` :
                                                    `/form${s.formId}/approval?id=${s.id}`,
             }))
@@ -471,7 +532,7 @@ export default function HomePage() {
             My Submissions
             {submissions.length > 0 && <span className="absolute -top-2 -right-5 bg-[#1183B7] text-white text-xs w-4 h-4 rounded-full flex items-center justify-center font-bold">{submissions.length}</span>}
           </button>
-          {!isApprover && (
+          {(!isApprover || currentRole === 'LEGAL_OFFICER') && (
             <button onClick={() => setActiveTab(activeTab === 'drafts' ? null : 'drafts')}
               className={`relative text-white font-medium pb-2 transition-all text-sm ${activeTab === 'drafts' ? 'border-b-2 border-white' : 'opacity-70 hover:opacity-100'}`}>
               My Drafts
@@ -538,7 +599,7 @@ export default function HomePage() {
 
       {activeTab === 'workflows'   && <WorkflowsPanel  items={workflows}   loading={loading} onClose={() => setActiveTab(null)} onNavigate={(r) => router.push(r)} />}
       {activeTab === 'submissions' && <SubmissionsPanel items={submissions} loading={loading} onClose={() => setActiveTab(null)} onNavigate={(r) => router.push(r)} />}
-      {activeTab === 'drafts'      && <DraftsPanel      items={drafts}      loading={loading} onClose={() => setActiveTab(null)} onNavigate={(r) => router.push(r)} />}
+      {activeTab === 'drafts'      && <DraftsPanel      items={drafts}      loading={loading} onClose={() => setActiveTab(null)} onNavigate={(r) => router.push(r)} onDelete={(id) => { setDrafts(prev => prev.filter(d => d.id !== id)); setSubmissions(prev => prev.filter(s => s.id !== id)); }} />}
       {activeTab === 'approvals'   && <ApprovalsPanel   items={approvals}   loading={loading} onClose={() => setActiveTab(null)} onNavigate={(r) => router.push(r)} />}
     </div>
   );
