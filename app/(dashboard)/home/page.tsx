@@ -331,22 +331,18 @@ export default function HomePage() {
   const currentUserName = session?.user?.name ?? 'User';
   const currentUserId = session?.user?.id ?? '';
   const router = useRouter();
-  if (status === 'loading') return null;
-  if (status === 'authenticated' && !['INITIATOR', 'BUM', 'FBP', 'CLUSTER_HEAD', 'LEGAL_GM', 'LEGAL_OFFICER', 'CEO', 'COURT_OFFICER', 'FINANCE'].includes(session?.user?.role as string)) {
-    router.replace('/');
-    return null;
-  }
-  const isApprover = currentRole !== 'INITIATOR';
-  const isInitiator = currentRole === 'INITIATOR' || currentRole === 'LEGAL_OFFICER';
 
+  // ── All hooks must be declared before any conditional returns ──
   type TabType = 'workflows' | 'submissions' | 'approvals' | 'drafts' | null;
   const [activeTab, setActiveTab] = useState<TabType>(null);
-
   const [submissions, setSubmissions] = useState<SubmissionItem[]>([]);
-  const [drafts, setDrafts]             = useState<SubmissionItem[]>([]);
+  const [drafts, setDrafts]           = useState<SubmissionItem[]>([]);
   const [approvals, setApprovals]     = useState<ApprovalItem[]>([]);
   const [workflows, setWorkflows]     = useState<WorkflowItem[]>([]);
   const [loading, setLoading]         = useState(false);
+
+  const isApprover = currentRole !== 'INITIATOR';
+  const isInitiator = currentRole === 'INITIATOR' || currentRole === 'LEGAL_OFFICER';
 
   useEffect(() => {
     async function loadData() {
@@ -359,7 +355,13 @@ export default function HomePage() {
 
         // ── My Submissions (initiator view — all statuses) ─────────────────
         setSubmissions(
-          all.filter((s: any) => s.initiatorId === currentUserId && s.status !== 'RESUBMITTED' && s.status !== 'DRAFT').map((s: any) => ({
+          all.filter((s: any) => {
+            if (s.initiatorId !== currentUserId) return false;
+            if (s.status === 'RESUBMITTED' || s.status === 'DRAFT') return false;
+            // Hide SENT_BACK originals if a resubmission already exists for them
+            if (s.status === 'SENT_BACK' && all.some((r: any) => r.parentId === s.id)) return false;
+            return true;
+          }).map((s: any) => ({
             id: s.id, requestNo: s.submissionNo, formTitle: s.formName,
             formType: `FORM ${s.formId}`, submittedDate: formatDate(s.createdAt),
             status: DB_TO_SUBMISSION[s.status] || 'ONGOING', lastUpdated: formatDate(s.updatedAt),
@@ -376,72 +378,56 @@ export default function HomePage() {
         );
 
         if (isApprover) {
-          // ── Collect ALL submissions this role has EVER been involved with ──
-          // This is the key fix: we never filter by current status.
-          // Instead we look at each role's historical involvement.
           const mySubmissions = (() => {
             if (currentRole === 'BUM')
               return all.filter((s: any) => s.bumId === currentUserId && s.status !== 'RESUBMITTED');
-
             if (currentRole === 'FBP')
               return all.filter((s: any) => s.fbpId === currentUserId && s.status !== 'RESUBMITTED');
-
             if (currentRole === 'CLUSTER_HEAD')
               return all.filter((s: any) => s.clusterHeadId === currentUserId && s.status !== 'RESUBMITTED');
-
             if (currentRole === 'LEGAL_GM')
-              return all.filter((s: any) => !['PENDING_APPROVAL', 'DRAFT', 'RESUBMITTED'].includes(s.status));
-
+              return all.filter((s: any) => !['PENDING_APPROVAL', 'PENDING_CEO', 'DRAFT', 'RESUBMITTED'].includes(s.status));
             if (currentRole === 'LEGAL_OFFICER')
               return all.filter((s: any) => s.assignedLegalOfficer === currentUserId && s.status !== 'RESUBMITTED');
             if (currentRole === 'COURT_OFFICER')
               return all.filter((s: any) => s.courtOfficerId === currentUserId && s.status !== 'RESUBMITTED');
-
             if (currentRole === 'CEO')
-              return all.filter((s: any) => s.status === 'PENDING_CEO' && s.status !== 'RESUBMITTED');
-
+              return all.filter((s: any) => s.approvals?.some((a: any) => a.role === 'CEO') && s.status !== 'RESUBMITTED');
             return [];
           })();
 
-          // ── Map each submission to an approval status for this role ────────
           const firstLevelRoles = ['BUM', 'FBP', 'CLUSTER_HEAD'];
 
           setApprovals(
             mySubmissions.map((s: any) => {
               let status: ApprovalFilter = 'PENDING';
-
               if (firstLevelRoles.includes(currentRole)) {
-                // Use the individual approval record — persists regardless of overall submission status
                 const myRecord = s.approvals?.find((a: any) => a.role === currentRole);
                 if (myRecord) {
-                  if (myRecord.status === 'APPROVED')   status = 'APPROVED';
+                  if (myRecord.status === 'APPROVED') status = 'APPROVED';
                   else if (myRecord.status === 'SENT_BACK' || myRecord.status === 'CANCELLED') status = 'MY_REJECTIONS';
                   else status = 'PENDING';
                 }
               } else if (currentRole === 'LEGAL_GM') {
-                // Map current submission status to GM perspective
-                if (['COMPLETED'].includes(s.status))                         status = 'APPROVED';
-                else if (s.status === 'CANCELLED')                            status = 'OTHER_REJECTIONS';
-                else if (s.status === 'SENT_BACK')                            status = 'MY_REJECTIONS';
-                else if (['PENDING_LEGAL_GM', 'PENDING_LEGAL_GM_FINAL'].includes(s.status)) status = 'PENDING';
-                else status = 'APPROVED'; // past GM stage = GM already approved
+                if (['COMPLETED'].includes(s.status))                                         status = 'APPROVED';
+                else if (s.status === 'CANCELLED')                                            status = 'OTHER_REJECTIONS';
+                else if (s.status === 'SENT_BACK')                                            status = 'MY_REJECTIONS';
+                else if (['PENDING_LEGAL_GM', 'PENDING_LEGAL_GM_FINAL'].includes(s.status))  status = 'PENDING';
+                else                                                                           status = 'APPROVED';
               } else if (currentRole === 'LEGAL_OFFICER') {
-                // Map current submission status to LO perspective
-                if (s.status === 'COMPLETED')                                 status = 'APPROVED';
-                else if (s.status === 'CANCELLED')                            status = 'OTHER_REJECTIONS';
-                else if (s.status === 'SENT_BACK')                            status = 'MY_REJECTIONS';
-                else if (s.status === 'PENDING_LEGAL_OFFICER')                status = 'PENDING';
-                else status = 'APPROVED'; // past LO stage = LO already approved/forwarded
+                if (s.status === 'COMPLETED')                   status = 'APPROVED';
+                else if (s.status === 'CANCELLED')              status = 'OTHER_REJECTIONS';
+                else if (s.status === 'SENT_BACK')              status = 'MY_REJECTIONS';
+                else if (s.status === 'PENDING_LEGAL_OFFICER')  status = 'PENDING';
+                else                                            status = 'APPROVED';
               }
-
               const route =
-                currentRole === 'LEGAL_OFFICER' ? `/form${s.formId}/legal-officer?id=${s.id}` :
-                currentRole === 'COURT_OFFICER'  ? `/form${s.formId}/court-officer?id=${s.id}` :
-                currentRole === 'SPECIAL_APPROVER' ? `/form${s.formId}/special-approver?id=${s.id}` :
-              currentRole === 'LEGAL_GM'       ? `/form${s.formId}/legal-gm?id=${s.id}` :
-                currentRole === 'CEO'            ? `/form${s.formId}/ceo?id=${s.id}` :
-                                                   `/form${s.formId}/approval?id=${s.id}`;
-
+                currentRole === 'LEGAL_OFFICER'   ? `/form${s.formId}/legal-officer?id=${s.id}` :
+                currentRole === 'COURT_OFFICER'   ? `/form${s.formId}/court-officer?id=${s.id}` :
+                currentRole === 'SPECIAL_APPROVER'? `/form${s.formId}/special-approver?id=${s.id}` :
+                currentRole === 'LEGAL_GM'        ? `/form${s.formId}/legal-gm?id=${s.id}` :
+                currentRole === 'CEO'             ? `/form${s.formId}/ceo?id=${s.id}` :
+                                                    `/form${s.formId}/approval?id=${s.id}`;
               return {
                 id: s.id, requestNo: s.submissionNo, formTitle: s.formName,
                 formType: `FORM ${s.formId}`, submittedBy: s.initiatorName || s.initiatorId,
@@ -450,26 +436,21 @@ export default function HomePage() {
             })
           );
 
-          // ── Pending workflows = items needing action OR viewable by LO/GM ──
           const needsAction = (s: any): boolean => {
             if (currentRole === 'BUM' || currentRole === 'FBP' || currentRole === 'CLUSTER_HEAD')
-              return s.status === 'PENDING_APPROVAL' &&
-                     s.approvals?.some((a: any) => a.role === currentRole && a.status === 'PENDING');
-            if (currentRole === 'CEO')
-              return s.status === 'PENDING_CEO';
-            if (currentRole === 'LEGAL_GM')
-              return ['PENDING_LEGAL_GM', 'PENDING_LEGAL_GM_FINAL'].includes(s.status);
-            if (currentRole === 'LEGAL_OFFICER')
-              return s.status === 'PENDING_LEGAL_OFFICER' || s.loStage === 'FINALIZATION';
-            if (currentRole === 'COURT_OFFICER')
-              return s.status === 'PENDING_COURT_OFFICER';
-            if (currentRole === 'SPECIAL_APPROVER')
-              return s.status === 'PENDING_SPECIAL_APPROVER';
+              return s.status === 'PENDING_APPROVAL' && s.approvals?.some((a: any) => a.role === currentRole && a.status === 'PENDING');
+            if (currentRole === 'CEO')           return s.status === 'PENDING_CEO';
+            if (currentRole === 'LEGAL_GM')      return ['PENDING_LEGAL_GM', 'PENDING_LEGAL_GM_FINAL'].includes(s.status);
+            if (currentRole === 'LEGAL_OFFICER') return s.status === 'PENDING_LEGAL_OFFICER' || s.loStage === 'FINALIZATION';
+            if (currentRole === 'COURT_OFFICER') return s.status === 'PENDING_COURT_OFFICER';
+            if (currentRole === 'SPECIAL_APPROVER') return s.status === 'PENDING_SPECIAL_APPROVER';
             return false;
           };
 
-          // LO, GM, CEO and Court Officer also see all their past submissions (view only)
-          const workflowSubmissions = (currentRole === 'LEGAL_OFFICER' || currentRole === 'LEGAL_GM' || currentRole === 'CEO' || currentRole === 'COURT_OFFICER' || currentRole === 'SPECIAL_APPROVER')
+          // CEO only sees PENDING_CEO in My Workflows (after action it disappears from here)
+          const workflowSubmissions = currentRole === 'CEO'
+            ? mySubmissions.filter((s: any) => needsAction(s))
+            : ['LEGAL_OFFICER','LEGAL_GM','COURT_OFFICER','SPECIAL_APPROVER','BUM','FBP','CLUSTER_HEAD'].includes(currentRole)
             ? mySubmissions
             : mySubmissions.filter((s: any) => needsAction(s));
 
@@ -482,17 +463,16 @@ export default function HomePage() {
               dueDate: s.dueDate ? formatDate(s.dueDate) : formatDate(s.createdAt),
               isOverdue: needsAction(s) && s.dueDate ? new Date() > new Date(s.dueDate) : false,
               route:
-                currentRole === 'LEGAL_OFFICER' ? `/form${s.formId}/legal-officer?id=${s.id}` :
-                currentRole === 'COURT_OFFICER'  ? `/form${s.formId}/court-officer?id=${s.id}` :
-                currentRole === 'SPECIAL_APPROVER' ? `/form${s.formId}/special-approver?id=${s.id}` :
-              currentRole === 'LEGAL_GM'       ? `/form${s.formId}/legal-gm?id=${s.id}` :
-                currentRole === 'CEO'           ? `/form${s.formId}/ceo?id=${s.id}` :
-                                                   `/form${s.formId}/approval?id=${s.id}`,
+                currentRole === 'LEGAL_OFFICER'   ? `/form${s.formId}/legal-officer?id=${s.id}` :
+                currentRole === 'COURT_OFFICER'   ? `/form${s.formId}/court-officer?id=${s.id}` :
+                currentRole === 'SPECIAL_APPROVER'? `/form${s.formId}/special-approver?id=${s.id}` :
+                currentRole === 'LEGAL_GM'        ? `/form${s.formId}/legal-gm?id=${s.id}` :
+                currentRole === 'CEO'             ? `/form${s.formId}/ceo?id=${s.id}` :
+                                                    `/form${s.formId}/approval?id=${s.id}`,
             }))
           );
 
         } else {
-          // ── Initiator workflows — sent back items needing resubmission ─────
           setWorkflows(
             all.filter((s: any) => s.initiatorId === currentUserId && s.status === 'SENT_BACK' && !all.some((r: any) => r.parentId === s.id))
                .map((s: any) => ({
@@ -513,6 +493,13 @@ export default function HomePage() {
     }
     loadData();
   }, [currentUserId, currentRole, isApprover, currentUserName]);
+
+  // ── Early returns AFTER all hooks ──
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && !['INITIATOR', 'BUM', 'FBP', 'CLUSTER_HEAD', 'LEGAL_GM', 'LEGAL_OFFICER', 'CEO', 'COURT_OFFICER', 'FINANCE'].includes(session?.user?.role as string)) {
+    router.replace('/');
+    return null;
+  }
 
   const firstName = currentUserName.split(' ')[0];
 

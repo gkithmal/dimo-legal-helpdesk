@@ -37,7 +37,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ouLegalReviewCompleted, ouRegisteredDate, ouLegalRefNumber, ouDateOfExecution, ouDateOfExpiration,
       ouDirectorsExecuted1, ouDirectorsExecuted2, ouConsideration, ouReviewedBy, ouRegisteredBy,
       ouSignedSupplierCode, ouRemarks, ouSavedAt, financeViewedAt,
-      f2StampDuty, f2LegalFees, f2ReferenceNo, f2BoardApproval, f2Remarks } = body;
+      f2StampDuty, f2LegalFees, f2ReferenceNo, f2BoardApproval, f2Remarks,
+      f3GmcApprovalNo, f3CaseNo, f3CaseFillingDate, f3Council, f3Court, f3Remarks } = body;
     // ── Update a single document's fileUrl ──
     if (documentId && fileUrl) {
       const updatedDoc = await prisma.submissionDocument.update({
@@ -85,6 +86,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(f2ReferenceNo !== undefined && { f2ReferenceNo }),
         ...(f2BoardApproval !== undefined && { f2BoardApproval }),
         ...(f2Remarks !== undefined && { f2Remarks }),
+        ...(f3GmcApprovalNo !== undefined && { f3GmcApprovalNo }),
+        ...(f3CaseNo !== undefined && { f3CaseNo }),
+        ...(f3CaseFillingDate !== undefined && { f3CaseFillingDate }),
+        ...(f3Council !== undefined && { f3Council }),
+        ...(f3Court !== undefined && { f3Court }),
+        ...(f3Remarks !== undefined && { f3Remarks }),
         updatedAt: new Date(),
       },
       include: { parties: true, approvals: true, documents: true, comments: true, specialApprovers: true },

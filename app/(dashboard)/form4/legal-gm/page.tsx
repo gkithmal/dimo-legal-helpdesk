@@ -48,12 +48,11 @@ type Submission = {
 
 // LEGAL_OFFICERS loaded dynamically from API
 
-const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head', CEO: 'CEO' };
+const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head' };
 
 const WORKFLOW_STEPS = [
   { label: 'Form\nSubmission' },
   { label: 'Approvals' },
-  { label: 'CEO\nApproval' },
   { label: 'Legal GM\nReview' },
   { label: 'In\nProgress' },
   { label: 'Legal GM\nApproval' },
@@ -513,6 +512,11 @@ function LegalGMPageContent() {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load');
       const s = data.data;
+      // Redirect to correct form if this submission belongs to a different form
+      if (s.formId && s.formId !== 1) {
+        router.replace(`/form${s.formId}/legal-gm?id=${submissionId}`);
+        return;
+      }
       setSubmission(s);
       const officerName = s.legalOfficerName || s.assignedLegalOfficer || '';
       setAssignedOfficer({ name: officerName, email: '' });
@@ -594,7 +598,6 @@ function LegalGMPageContent() {
           approverName: session?.user?.name || '',
           approverEmail: session?.user?.email || '',
           assignedOfficer: legalOfficers.find(o => o.name === assignedOfficer.name)?.id || assignedOfficer.name || '',
-          // Pass special approvers so API can create records and route through them
           specialApprovers: action === 'APPROVED' ? specialApprovers.map(sa => ({
             email: sa.email,
             name: sa.name || sa.email,
@@ -649,20 +652,16 @@ function LegalGMPageContent() {
   // ── Derived ──
   const stage: LegalGMStage = (submission?.status === 'PENDING_LEGAL_GM_FINAL' || submission?.legalGmStage === 'FINAL_APPROVAL') ? 'FINAL_APPROVAL' : 'INITIAL_REVIEW';
   const isInitial = stage === 'INITIAL_REVIEW';
-  const meta = (() => { try { return JSON.parse(submission?.scopeOfAgreement || '{}'); } catch { return {}; } })();
   const activeStep = (() => {
     if (!submission) return 0;
     const { status, loStage } = submission;
-    // Steps: 0=Form Submission, 1=Approvals, 2=CEO Approval,
-    //        3=Legal GM Review, 4=In Progress (LO), 5=Legal GM Approval, 6=Ready to Collect
-    if (status === 'PENDING_CEO') return 2;
-    if (status === 'PENDING_LEGAL_GM') return 3;
-    if (status === 'PENDING_LEGAL_OFFICER' && (loStage === 'INITIAL_REVIEW' || loStage === 'REVIEW_FOR_GM' || loStage === 'ACTIVE')) return 4;
-    if (status === 'PENDING_SPECIAL_APPROVER') return 4;
-    if (status === 'PENDING_LEGAL_GM_FINAL') return 5;
-    if (status === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
-    if (status === 'COMPLETED') return 6;
-    return 3;
+    if (status === 'PENDING_LEGAL_GM') return 2;
+    if (status === 'PENDING_LEGAL_OFFICER' && loStage === 'ACTIVE') return 3;
+    if (status === 'PENDING_SPECIAL_APPROVER') return 3;
+    if (status === 'PENDING_LEGAL_GM_FINAL') return 4;
+    if (status === 'PENDING_LEGAL_OFFICER' && loStage === 'POST_GM_APPROVAL') return 5;
+    if (status === 'COMPLETED') return 5;
+    return 2;
   })();
   const steps = WORKFLOW_STEPS;
 
@@ -766,15 +765,15 @@ function LegalGMPageContent() {
                   <FileText className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-white font-bold text-base">Lease Agreement</h1>
-                  <p className="text-white/50 text-[11px] mt-0.5 font-mono">16/FM/1641/07/02</p>
+                  <h1 className="text-white font-bold text-base">Vehicle Rent Agreement</h1>
+                  <p className="text-white/50 text-[11px] mt-0.5 font-mono">18/FM/1641/07/04</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-[11px] font-semibold px-3 py-1 rounded-full border bg-purple-500/20 text-purple-200 border-purple-400/30">
                   Legal GM {isInitial ? 'Review' : 'Final Approval'}
                 </span>
-                <div className="bg-white text-[#1A438A] font-bold text-sm px-4 py-2 rounded-xl">Form 2</div>
+                <div className="bg-white text-[#1A438A] font-bold text-sm px-4 py-2 rounded-xl">Form 4</div>
               </div>
             </div>
           </div>
@@ -796,63 +795,31 @@ function LegalGMPageContent() {
             </div>
             <div className="px-6 py-6 space-y-5">
               <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Contact No" value={meta.contactNo || ''} />
-                <ReadField label="Dept. SAP Code" value={meta.deptSapCode || ''} />
+                <ReadField label="Company Code" value={submission.companyCode} />
+                <ReadField label="Title" value={submission.title} />
               </div>
-              <ReadField label="Purpose of Lease" value={meta.purposeOfLease || ''} />
-              <SectionDivider>Property Owner (Lessor)</SectionDivider>
+              <SectionDivider>Parties to the Agreement</SectionDivider>
               <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <div className="grid grid-cols-2 bg-slate-50 border-b border-slate-200">
+                <div className="grid grid-cols-2 gap-0 bg-slate-50 border-b border-slate-200">
                   <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Type</div>
-                  <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-l border-slate-200">Name</div>
+                  <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-l border-slate-200">Name of the Party</div>
                 </div>
-                {(meta.lessorParties || []).filter((p: any) => p.type || p.name).map((p: any, i: number) => (
-                  <div key={i} className="grid grid-cols-2 border-b border-slate-100 last:border-0">
+                {submission.parties.map((p, i) => (
+                  <div key={i} className={`grid grid-cols-2 ${i < submission.parties.length - 1 ? 'border-b border-slate-100' : ''}`}>
                     <div className="px-3.5 py-2.5 text-sm text-slate-700">{p.type}</div>
                     <div className="px-3.5 py-2.5 text-sm text-slate-700 border-l border-slate-100 font-medium">{p.name}</div>
                   </div>
                 ))}
               </div>
+              <SectionDivider>Agreement Details</SectionDivider>
+              <ReadField label="SAP Cost Center" value={submission.sapCostCenter} />
+              <ReadField label="Scope of Agreement" value={submission.scopeOfAgreement} multiline />
+              <ReadField label="Term" value={submission.term} multiline />
               <div className="grid grid-cols-2 gap-4">
-                <ReadField label="NIC No" value={meta.nicNo || ''} />
-                <ReadField label="VAT Reg. No." value={meta.vatRegNo || ''} />
+                <ReadField label="Value (LKR)" value={submission.value} />
+                <ReadField label="Remarks" value={submission.remarks || ''} />
               </div>
-              <ReadField label="Contact (Lessor)" value={meta.lessorContact || ''} />
-              <SectionDivider>Lessee / Tenant Details</SectionDivider>
-              <ReadField label="Name of Lessee/Tenant" value={meta.leaseName || ''} />
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Premises bearing Asst. No" value={meta.premisesAssetNo || ''} />
-                <ReadField label="Period of Lease" value={meta.periodOfLease || ''} />
-              </div>
-              <SectionDivider>Asset &amp; Lease Details</SectionDivider>
-              <div>
-                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Asset Type</label>
-                <div className="flex items-center gap-3 flex-wrap">
-                  {meta.assetHouse && <span className="px-3 py-1 rounded-full bg-[#EEF3F8] text-[#1A438A] text-xs font-bold">House</span>}
-                  {meta.assetLand && <span className="px-3 py-1 rounded-full bg-[#EEF3F8] text-[#1A438A] text-xs font-bold">Land</span>}
-                  {meta.assetBuilding && <span className="px-3 py-1 rounded-full bg-[#EEF3F8] text-[#1A438A] text-xs font-bold">Building</span>}
-                  {meta.assetExtent && <span className="text-sm text-slate-500 ml-2">Extent: {meta.assetExtent}</span>}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Commencing from" value={meta.commencingFrom || ''} />
-                <ReadField label="Ending on" value={meta.endingOn || ''} />
-              </div>
-              <ReadField label="Monthly Rental Rs." value={meta.monthlyRental || ''} />
-              <div className="grid grid-cols-3 gap-4">
-                <ReadField label="Advance Payment Rs." value={meta.advancePayment || ''} />
-                <ReadField label="Deductible Rate Rs." value={meta.deductibleRate || ''} />
-                <ReadField label="Period" value={meta.deductiblePeriod || ''} />
-              </div>
-              <ReadField label="Refundable Deposit Rs." value={meta.refundableDeposit || ''} />
-              <ReadField label="Electricity, Water & Phone" value={meta.electricityWaterPhone || ''} />
-              <ReadField label="Renewal — Previous Agreement No" value={meta.previousAgreementNo || ''} />
-              <ReadField label="Date of Principal Agreement" value={meta.dateOfPrincipalAgreement || ''} />
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Buildings constructed?" value={meta.buildingsConstructed || ''} />
-                <ReadField label="Intend to construct?" value={meta.intendToConstruct || ''} />
-              </div>
-              <ReadField label="Remarks" value={meta.remarks || ''} />
+              <ReadField label="Initiator Comments" value={submission.initiatorComments || ''} />
             </div>
           </div>
         </div>
@@ -1038,11 +1005,12 @@ function LegalGMPageContent() {
       {showReassign && <ReassignModal currentOfficer={assignedOfficer.name} officers={legalOfficers} onSave={async (n, e) => {
   setAssignedOfficer({ name: n, email: e });
   if (submissionId) {
+    const officerId = legalOfficers.find(o => o.name === n)?.id || n;
     await fetch(`/api/submissions/${submissionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        assignedLegalOfficer: legalOfficers.find(o => o.name === n)?.id || n,
+        assignedLegalOfficer: officerId,
         ...(stage === 'FINAL_APPROVAL' && {
           status: 'PENDING_LEGAL_OFFICER',
           loStage: 'POST_GM_APPROVAL',

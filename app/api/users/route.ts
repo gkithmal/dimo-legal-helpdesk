@@ -10,8 +10,9 @@ export async function GET(req: NextRequest) {
     if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const { searchParams } = new URL(req.url);
     const role = searchParams.get('role');
+    const includeInactive = searchParams.get('includeInactive') === 'true';
     const users = await prisma.user.findMany({
-      where: { isActive: true, ...(role ? { role } : {}) },
+      where: { ...(!includeInactive && { isActive: true }), ...(role ? { role } : {}) },
       select: { id: true, name: true, email: true, role: true, department: true, isActive: true, formIds: true },
       orderBy: { name: 'asc' },
     });

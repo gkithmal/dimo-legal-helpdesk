@@ -89,6 +89,7 @@ function SpecialApproverForm2Content() {
   const [bum,         setBum]         = useState('');
   const [fbp,         setFbp]         = useState('');
   const [clusterHead, setClusterHead] = useState('');
+  const [ceoApproval, setCeoApproval] = useState<{ name: string; status: string }>({ name: '', status: '' });
 
   // ── Form 2 (Lease Agreement) fields — all from meta JSON ──
   const [contactNo,                setContactNo]                = useState('');
@@ -166,6 +167,7 @@ function SpecialApproverForm2Content() {
           if (a.role === 'BUM')          setBum(a.approverName || '');
           if (a.role === 'FBP')          setFbp(a.approverName || '');
           if (a.role === 'CLUSTER_HEAD') setClusterHead(a.approverName || '');
+          if (a.role === 'CEO')          setCeoApproval({ name: a.approverName || '', status: a.status || 'PENDING' });
         });
       }
       if (s.documents?.length) setDocFiles(s.documents);
@@ -495,10 +497,21 @@ function SpecialApproverForm2Content() {
               ))}
               <div>
                 <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">CEO</label>
-                <div className="w-full px-3.5 py-2 rounded-lg border border-amber-200 bg-amber-50 text-sm flex items-center gap-2">
-                  <Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                  <span className="text-amber-600 text-xs font-semibold">Awaiting first-level approvals</span>
-                </div>
+                {ceoApproval.status === 'APPROVED' ? (
+                  <div className="w-full px-3.5 py-2 rounded-lg border border-emerald-200 bg-emerald-50 text-sm flex items-center gap-2">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                    <span className="text-emerald-700 text-xs font-semibold">{ceoApproval.name || 'CEO'} — Approved</span>
+                  </div>
+                ) : ceoApproval.status === 'PENDING' ? (
+                  <div className="w-full px-3.5 py-2 rounded-lg border border-amber-200 bg-amber-50 text-sm flex items-center gap-2">
+                    <Clock className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
+                    <span className="text-amber-600 text-xs font-semibold">Pending CEO Approval</span>
+                  </div>
+                ) : (
+                  <div className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-600">
+                    <span className="text-slate-300 italic">—</span>
+                  </div>
+                )}
               </div>
             </div>
           </PanelSection>

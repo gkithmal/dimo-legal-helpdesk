@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Bell, X, CheckCircle2, Clock, RotateCcw, AlertCircle, ChevronRight } from 'lucide-react';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
@@ -185,8 +186,8 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {open && (
-        <div className="fixed left-[84px] top-4 w-72 rounded-2xl shadow-2xl overflow-hidden z-[9999] border border-white/10"
+      {open && createPortal(
+        <div className="fixed left-[84px] top-4 w-72 rounded-2xl shadow-2xl overflow-hidden z-[99999] border border-white/10"
           style={{ background: 'linear-gradient(160deg, #0f2240 0%, #17293E 100%)' }}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
@@ -227,7 +228,7 @@ export default function NotificationBell() {
             )}
           </div>
         </div>
-      )}
+      , document.body)}
     </div>
   );
 }

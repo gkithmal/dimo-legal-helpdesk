@@ -649,7 +649,13 @@ function Form2PageContent() {
     setDocFiles(prev => ({ ...prev, [docKey]: (prev[docKey] || []).filter(f => f.id !== fileId) }));
 
   const currentStep = mode === 'view' ? (STATUS_TO_STEP[submissionStatus] ?? 1) : 0;
-  const canUploadDocs = mode === 'new' || mode === 'draft' || mode === 'resubmit';
+  // In view mode (submitted): can ADD files but NOT remove existing ones
+  // In resubmit/new/draft: full control — add and remove
+  const isTerminalStatus = ['COMPLETED', 'CANCELLED'].includes(submissionStatus);
+  const canAddDocs = !isTerminalStatus && (mode === 'new' || mode === 'draft' || mode === 'resubmit' || mode === 'view');
+  const canRemoveDocs = mode === 'new' || mode === 'draft' || mode === 'resubmit';
+  // Legacy alias used below
+  const canUploadDocs = canAddDocs;
 
   // Dynamic docs — always show all 23 common docs, union type-specific on lessor selection
   const selectedTypes = [...new Set(lessorParties.map((p) => p.type).filter(Boolean))];
@@ -1162,19 +1168,37 @@ function Form2PageContent() {
               <label className="flex flex-col items-center gap-3 border-2 border-dashed border-slate-200 rounded-xl p-6 cursor-pointer hover:border-[#1A438A]/40 transition-colors">
                 <Paperclip className="w-8 h-8 text-slate-300" />
                 <span className="text-sm text-slate-500">Click to select file</span>
-                <input type="file" className="hidden" onChange={(e) => {
+                <input type="file" className="hidden" onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  addFilesToDoc(uploadPopup.docKey, [{ id: Date.now().toString(), name: file.name, size: file.size, file }]);
+                  if (mode === 'view' && submissionId && uploadPopup.docId) {
+                    // In view mode: upload immediately to DB
+                    const fd = new FormData();
+                    fd.append('file', file);
+                    fd.append('submissionId', submissionId);
+                    const uploadRes = await fetch('/api/upload', { method: 'POST', body: fd });
+                    const uploadData = await uploadRes.json();
+                    if (uploadData.success && uploadData.url) {
+                      await fetch(`/api/submissions/${submissionId}`, {
+                        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ documentId: uploadPopup.docId, fileUrl: uploadData.url, documentStatus: 'UPLOADED' }),
+                      });
+                      addFilesToDoc(uploadPopup.docKey, [{ id: uploadData.url, name: file.name, size: file.size, file, fileUrl: uploadData.url }]);
+                    }
+                  } else {
+                    addFilesToDoc(uploadPopup.docKey, [{ id: Date.now().toString(), name: file.name, size: file.size, file }]);
+                  }
                 }} />
               </label>
               {(docFiles[uploadPopup.docKey] || []).map((f) => (
                 <div key={f.id} className="flex items-center gap-2 mt-3 p-2 rounded-lg bg-slate-50 border border-slate-200">
                   <FileText className="w-4 h-4 text-[#1A438A] flex-shrink-0" />
                   <span className="text-xs text-slate-600 flex-1 truncate">{f.name}</span>
-                  <button onClick={() => removeFileFromDoc(uploadPopup.docKey, f.id)} className="text-red-400 hover:text-red-600">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  {canRemoveDocs && (
+                    <button onClick={() => removeFileFromDoc(uploadPopup.docKey, f.id)} className="text-red-400 hover:text-red-600">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

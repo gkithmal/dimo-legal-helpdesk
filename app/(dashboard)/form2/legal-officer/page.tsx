@@ -39,6 +39,7 @@ type Submission = {
   remarks?: string;
   initiatorComments?: string;
   assignedLegalOfficer?: string;
+  ouSavedAt?: string | null;
   parties: Party[];
   approvals: ApproverRecord[];
   documents: { id: string; label: string; type: string; status: string; fileUrl?: string | null; comment?: string | null }[];
@@ -124,6 +125,12 @@ function AttachmentPreviewPage({ doc, canAct, onSave, onBack }: {
               <ArrowLeft className="w-4 h-4 text-slate-600" />
             </button>
             <span className="text-sm font-bold text-[#17293E] flex-1 truncate">{doc.label}</span>
+            {doc.fileUrl && (
+              <button onClick={() => window.open(doc.fileUrl!, '_blank')}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#EEF3F8] hover:bg-[#d9e4f0] text-[#1A438A] text-[11px] font-bold transition-colors flex-shrink-0 ml-2">
+                <Eye className="w-3 h-3" /> Open
+              </button>
+            )}
             {doc.status !== 'NONE' && <DocStatusIcon status={doc.status} />}
           </div>
           <div className="flex-1 overflow-hidden">
@@ -871,7 +878,7 @@ function LegalOfficerPageContent() {
   const [confirmModal, setConfirmModal] = useState<'cancel' | 'submit' | 'reassign' | 'special' | 'return' | null>(null);
   const [specialEmail, setSpecialEmail] = useState('');
   const [specialName, setSpecialName] = useState('');
-  const [successModal, setSuccessModal] = useState<'sent' | 'cancelled' | 'returned' | 'accepted' | null>(null);
+  const [successModal, setSuccessModal] = useState<'sent' | 'sentSpecial' | 'cancelled' | 'returned' | 'accepted' | null>(null);
 
   // ── Load submission ──
   const loadSubmission = useCallback(async () => {
@@ -884,9 +891,9 @@ function LegalOfficerPageContent() {
       setSubmission(s);
 
       // Map DB documents → local RequiredDoc shape
-      const partyTypes = s.parties.map((p: Party) => p.type);
+      // Show all initiator-uploaded docs (not LO_PREPARED), including Common/all types
       const filteredDocs = s.documents.filter((d) =>
-        partyTypes.includes(d.type) || (d.type === 'Common' && partyTypes.some((t: string) => t !== 'Individual'))
+        !d.type?.startsWith('LO_PREPARED')
       );
       setDocs(filteredDocs.map((d) => ({
         id: d.id,
@@ -1001,7 +1008,7 @@ function LegalOfficerPageContent() {
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed');
       setSubmission(data.data);
       setConfirmModal(null);
-      setSuccessModal('sent');
+      setSuccessModal('sentSpecial');
     } catch (err: unknown) {
       setApiError(err instanceof Error ? err.message : 'Failed');
     } finally {
@@ -1318,12 +1325,15 @@ function LegalOfficerPageContent() {
                 { label: 'GM Final\nApproval' }, { label: 'Ready to\nCollect' },
               ];
               const activeStep = (() => {
-                if (submission.status === 'PENDING_LEGAL_GM') return 2;
-                if (submission.status === 'PENDING_LEGAL_OFFICER' && submission.loStage === 'ACTIVE') return 3;
-                if (submission.status === 'PENDING_SPECIAL_APPROVER') return 3;
-                if (submission.status === 'PENDING_LEGAL_GM_FINAL') return 4;
-                if (submission.status === 'PENDING_LEGAL_OFFICER' && submission.loStage === 'POST_GM_APPROVAL') return 5;
-                if (submission.status === 'COMPLETED') return 5;
+                // Steps: 0=Form Submission, 1=First Level Approvals, 2=CEO Approval,
+                //        3=Legal GM Review, 4=Legal Officer Review, 5=GM Final Approval, 6=Ready to Collect
+                if (submission.status === 'PENDING_CEO') return 2;
+                if (submission.status === 'PENDING_LEGAL_GM') return 3;
+                if (submission.status === 'PENDING_LEGAL_OFFICER' && (submission.loStage === 'INITIAL_REVIEW' || submission.loStage === 'REVIEW_FOR_GM' || submission.loStage === 'ACTIVE')) return 4;
+                if (submission.status === 'PENDING_SPECIAL_APPROVER') return 4;
+                if (submission.status === 'PENDING_LEGAL_GM_FINAL') return 5;
+                if (submission.status === 'PENDING_LEGAL_OFFICER' && (submission.loStage === 'POST_GM_APPROVAL' || submission.loStage === 'FINALIZATION')) return 5;
+                if (submission.status === 'COMPLETED') return 6;
                 return 1;
               })();
               return (
@@ -1528,38 +1538,52 @@ function LegalOfficerPageContent() {
                     className="flex-1 py-3 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all disabled:opacity-50 flex items-center justify-center gap-1">
                     <ArrowLeft className="w-4 h-4" /> Back
                   </button>
-                  <button onClick={() => setConfirmModal('return')} disabled={isActing}
+                  <button onClick={() => setConfirmModal('return')} disabled={isActing || submission.status === 'PENDING_SPECIAL_APPROVER'}
                     className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
                     style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>
                     Return to Initiator
                   </button>
                 </div>
-                <button onClick={() => setConfirmModal('submit')} disabled={isActing}
-                    className="w-full py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70 flex items-center justify-center gap-1"
-                    style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
-                    {isActing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit to GM'}
-                  </button>
+                {submission.status === 'PENDING_SPECIAL_APPROVER' ? (
+                  <div className="w-full py-3 rounded-xl font-bold text-sm text-center bg-amber-50 border border-amber-200 text-amber-700">
+                    Awaiting Special Approver — Submit locked
+                  </div>
+                ) : (
+                  <button onClick={() => setConfirmModal('submit')} disabled={isActing}
+                      className="w-full py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70 flex items-center justify-center gap-1"
+                      style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+                      {isActing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Submit'}
+                    </button>
+                )}
               </div>
             )}
 
             {loStage === 'POST_GM_APPROVAL' && (
               <>
-                <div className="flex gap-2">
-                  <button onClick={() => router.push(ROUTES.HOME)} disabled={isActing}
-                    className="flex-1 py-3 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all disabled:opacity-50">
-                    Back
-                  </button>
-                  <button onClick={() => setShowOfficialUse(true)} disabled={isActing}
-                    className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 shadow-lg shadow-emerald-500/20 disabled:opacity-70"
-                    style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
-                    Next
-                  </button>
-                </div>
-                <button onClick={() => setShowMoreDocs(true)} disabled={isActing}
-                  className="w-full py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
-                  style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
-                  Request Clarifications
-                </button>
+                {submission.status === 'COMPLETED' ? (
+                  <div className="w-full py-3 rounded-xl font-bold text-sm text-center bg-emerald-50 border-2 border-emerald-200 text-emerald-700">
+                    ✓ This request has been completed
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <button onClick={() => router.push(ROUTES.HOME)} disabled={isActing}
+                        className="flex-1 py-3 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all disabled:opacity-50">
+                        Back
+                      </button>
+                      <button onClick={() => setShowOfficialUse(true)} disabled={isActing}
+                        className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 shadow-lg shadow-emerald-500/20 disabled:opacity-70"
+                        style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
+                        Next
+                      </button>
+                    </div>
+                    <button onClick={() => setShowMoreDocs(true)} disabled={isActing}
+                      className="w-full py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
+                      style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
+                      Request Clarifications
+                    </button>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -1674,7 +1698,8 @@ function LegalOfficerPageContent() {
           onConfirm={() => { setConfirmModal(null); setSuccessModal('accepted'); }} onClose={() => setConfirmModal(null)} />
       )}
 
-      {successModal === 'sent'      && <SuccessModal title="Successfully sent!" message="Form has been sent for Legal GM's Approval." submissionNo={submission.submissionNo} onClose={() => { setSuccessModal(null); router.push(ROUTES.HOME); }} />}
+      {successModal === 'sent'        && <SuccessModal title="Successfully sent!" message="Form has been submitted to Legal GM for approval." submissionNo={submission.submissionNo} onClose={() => { setSuccessModal(null); router.push(ROUTES.HOME); }} />}
+      {successModal === 'sentSpecial' && <SuccessModal title="Special Approver Assigned!" message="The request has been forwarded to the Special Approver. Submit to GM will be unlocked once they approve." submissionNo={submission.submissionNo} onClose={() => { setSuccessModal(null); }} />}
       {successModal === 'cancelled' && <SuccessModal title="Cancelled!" message="The request has been cancelled." submissionNo={submission.submissionNo} onClose={() => { setSuccessModal(null); router.push(ROUTES.HOME); }} />}
       {successModal === 'returned'  && <SuccessModal title="Returned to Initiator" message="The submission has been sent back to the initiator with your document markings and comments." submissionNo={submission.submissionNo} onClose={() => { setSuccessModal(null); router.push(ROUTES.HOME); }} />}
       {successModal === 'accepted'  && <SuccessModal title="Accepted!" message="Please make sure all the documents have been handed over to the assigned Legal Officer." onClose={() => { setSuccessModal(null); router.push(ROUTES.HOME); }} />}

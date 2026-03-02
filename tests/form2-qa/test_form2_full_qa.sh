@@ -125,13 +125,14 @@ get_id() {
 # ══════════════════════════════════════════════════════════════════════════════
 section "STEP 0: Environment Setup — Fetch User IDs & Login All Roles"
 # ══════════════════════════════════════════════════════════════════════════════
-USERS=$(curl -s $BASE/api/users)
+login "oliva.perera@testdimo.com" /tmp/c_initiator.txt
+USERS=$(curl -s -b /tmp/c_initiator.txt "$BASE/api/users?includeInactive=true")
 uid() { echo $USERS | python3 -c "import sys,json; u=[x for x in json.load(sys.stdin).get('data',[]) if x.get('email')=='$1']; print(u[0]['id'] if u else '')"; }
 
-INITIATOR_ID=$(uid "initiator@testdimo.com")
+INITIATOR_ID=$(uid "oliva.perera@testdimo.com")
 BUM_ID=$(uid "grace.perera@testdimo.com")
-FBP_ID=$(uid "fbp@testdimo.com")
-CH_ID=$(uid "cluster.head@testdimo.com")
+FBP_ID=$(uid "madurika.sama@testdimo.com")
+CH_ID=$(uid "mangala.wick@testdimo.com")
 LO_ID=$(uid "sandalie.gomes@testdimo.com")
 
 [ -n "$INITIATOR_ID" ] && track_pass "Initiator ID: $INITIATOR_ID" || { track_fail "Initiator not found"; exit 1; }
@@ -141,13 +142,12 @@ LO_ID=$(uid "sandalie.gomes@testdimo.com")
 [ -n "$LO_ID" ]        && track_pass "LO ID:        $LO_ID"        || { track_fail "Legal Officer not found"; exit 1; }
 
 subsect "Logging in all roles"
-login "initiator@testdimo.com"      /tmp/c_initiator.txt
-login "grace.perera@testdimo.com"   /tmp/c_bum.txt
-login "fbp@testdimo.com"            /tmp/c_fbp.txt
-login "cluster.head@testdimo.com"   /tmp/c_ch.txt
-login "ceo@testdimo.com"            /tmp/c_ceo.txt
-login "legal.gm@testdimo.com"       /tmp/c_lgm.txt
-login "sandalie.gomes@testdimo.com" /tmp/c_lo.txt
+login "grace.perera@testdimo.com"    /tmp/c_bum.txt
+login "madurika.sama@testdimo.com"   /tmp/c_fbp.txt
+login "mangala.wick@testdimo.com"    /tmp/c_ch.txt
+login "ceo@testdimo.com"             /tmp/c_ceo.txt
+login "dinali.guru@testdimo.com"     /tmp/c_lgm.txt
+login "sandalie.gomes@testdimo.com"  /tmp/c_lo.txt
 
 # ══════════════════════════════════════════════════════════════════════════════
 section "TEST A: Full Happy Path — End to End"
@@ -168,12 +168,12 @@ chk_init() {
 chk_init "formId"        "2"
 chk_init "formName"      "Lease Agreement"
 chk_init "status"        "PENDING_APPROVAL"
-chk_init "loStage"       "PENDING_GM"
+chk_init "loStage"       "PENDING_CEO"
 chk_init "legalGmStage"  "INITIAL_REVIEW"
 
 DOCS=$(echo $SUB_DATA | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',{}).get('documents',[])))")
 APPROVALS=$(echo $SUB_DATA | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('data',{}).get('approvals',[])))")
-[ "$APPROVALS" -eq "3" ] && track_pass "3 parallel approvals created (BUM+FBP+CH) ✓" || track_fail "Expected 3 approvals, got $APPROVALS"
+[ "$APPROVALS" -eq "4" ] && track_pass "4 parallel approvals created (BUM+FBP+CH+CEO) ✓" || track_fail "Expected 4 approvals, got $APPROVALS"
 [ "$DOCS" -gt "0" ]      && track_pass "Documents auto-created: $DOCS docs ✓"         || track_fail "No documents created"
 
 subsect "A3: Verify scopeOfAgreement fields"
@@ -203,7 +203,7 @@ subsect "A4: BUM approves"
 approve /tmp/c_bum.txt $SUB BUM APPROVED "BUM approval"
 subsect "A5: FBP approves"
 approve /tmp/c_fbp.txt $SUB FBP APPROVED "FBP approval"
-subsect "A6: Cluster Head approves — expect PENDING_CEO"
+subsect "A6: Cluster Head approves — all 3 approved, expect PENDING_CEO"
 approve /tmp/c_ch.txt $SUB CLUSTER_HEAD APPROVED "Cluster Head approval"
 check_status $SUB "PENDING_CEO"
 
@@ -218,7 +218,7 @@ PATCH_R=$(curl -s -b /tmp/c_lgm.txt -X PATCH "$BASE/api/submissions/$SUB" \
 api_ok "$PATCH_R" && track_pass "Legal GM assigned officer ✓" || track_fail "Officer assignment failed"
 approve /tmp/c_lgm.txt $SUB LEGAL_GM APPROVED "Legal GM initial approval"
 check_status  $SUB "PENDING_LEGAL_OFFICER"
-check_lo_stage $SUB "ACTIVE"
+check_lo_stage $SUB "INITIAL_REVIEW"
 check_gm_stage $SUB "INITIAL_REVIEW"
 
 subsect "A9: Legal Officer submits to GM — expect PENDING_LEGAL_GM_FINAL"
@@ -229,7 +229,7 @@ check_gm_stage $SUB "FINAL_APPROVAL"
 subsect "A10: Legal GM final approve — expect PENDING_LEGAL_OFFICER + POST_GM_APPROVAL"
 approve /tmp/c_lgm.txt $SUB LEGAL_GM APPROVED "Legal GM final approval"
 check_status   $SUB "PENDING_LEGAL_OFFICER"
-check_lo_stage $SUB "POST_GM_APPROVAL"
+check_lo_stage $SUB "FINALIZATION"
 
 subsect "A11: Legal Officer — Form 2 finalization (f2 fields)"
 F2_RES=$(curl -s -b /tmp/c_lo.txt -X PATCH "$BASE/api/submissions/$SUB" \
@@ -330,7 +330,7 @@ subsect "D2: FBP also approves — should still stay PENDING_APPROVAL"
 approve /tmp/c_fbp.txt $PAR FBP APPROVED "FBP approval (2 of 3)"
 check_status $PAR "PENDING_APPROVAL"
 
-subsect "D3: Cluster Head approves — NOW should move to PENDING_CEO"
+subsect "D3: Cluster Head approves — all 3 done, NOW moves to PENDING_CEO"
 approve /tmp/c_ch.txt $PAR CLUSTER_HEAD APPROVED "CH approval (3 of 3 — triggers transition)"
 check_status $PAR "PENDING_CEO"
 
@@ -395,7 +395,7 @@ section "TEST G: Document Verification"
 # ══════════════════════════════════════════════════════════════════════════════
 
 subsect "G1: Documents created with correct types for Individual lessor"
-login "initiator@testdimo.com" /tmp/c_initiator.txt
+login "oliva.perera@testdimo.com" /tmp/c_initiator.txt
 RES=$(make_sub "LHD_QA_F2_DOCS_001" "PENDING_APPROVAL")
 info "G1 raw response: $(echo $RES | cut -c1-200)"
 DOCS_SUB=$(get_id "$RES")

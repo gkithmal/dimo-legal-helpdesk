@@ -1,0 +1,12 @@
+# 1. Clean previous test data
+npx prisma db execute --stdin << 'SQL'
+DELETE FROM "submission_parties"           WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_F4_%');
+DELETE FROM "submission_approvals"         WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_F4_%');
+DELETE FROM "submission_documents"         WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_F4_%');
+DELETE FROM "submission_comments"          WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_F4_%');
+DELETE FROM "submission_special_approvers" WHERE "submissionId" IN (SELECT id FROM "submissions" WHERE "submissionNo" LIKE 'LHD_QA_F4_%');
+DELETE FROM "submissions"                  WHERE "submissionNo" LIKE 'LHD_QA_F4_%';
+SQL
+
+# 2. Run the test suite
+bash tests/form4-qa/test_form4_full_qa.sh

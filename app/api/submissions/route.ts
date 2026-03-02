@@ -117,21 +117,12 @@ export async function POST(req: NextRequest) {
 
     // Use transaction to ensure atomic operations and unique ID generation
     const submission = await prisma.$transaction(async (tx) => {
-      // Count today's submissions for sequence number
-      const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-      const todayEnd = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
-
-      const todayCount = await tx.submission.count({
-        where: {
-          createdAt: {
-            gte: todayStart,
-            lt: todayEnd,
-          },
-        },
-      });
-
-      // Generate submission number: LHD_20260219_001
-        const submissionNo = (body.submissionNo && body.submissionNo.trim()) ? body.submissionNo.trim() : `LHD_${dateStr}_${String(todayCount + 1).padStart(3, "0")}`;
+      // Generate submission number using ms timestamp for uniqueness: LHD_YYYYMMDDHHMMSS_mmm
+      // Using milliseconds avoids collisions when multiple submissions happen in the same second
+      const ms = String(today.getMilliseconds()).padStart(3, "0");
+      const submissionNo = (body.submissionNo && body.submissionNo.trim())
+        ? body.submissionNo.trim()
+        : `LHD_${dateStr}_${ms}`;
 
       // ─── Build Required Documents from Party Types ───
       const partyTypes: string[] = [
@@ -217,6 +208,28 @@ export async function POST(req: NextRequest) {
         [...typeSpecific, ...FORM3_BASE].forEach((label) => {
           if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type: 'Common', status: 'NONE' }); }
         });
+      } else if ((formId || 1) === 4) {
+        // ── Form 4: Vehicle Rent Agreement ──
+        const FORM4_COMMON = [
+          'Certificate of Registration',
+          'Revenue License',
+          'Vehicle Insurance Cover',
+
+        ];
+        const FORM4_BY_TYPE: Record<string, string[]> = {
+          'Company':              ['National Identity Card of Owner', 'Article of Association', 'Company Registration Certificate', 'Form 20'],
+          'Individual':           ['NIC (Individual owner)'],
+          'Partnership':          ['National Identity Card of Owner', 'Partnership Registration Certificate', 'NIC/passport copies of every partner'],
+          'Sole proprietorship':  ['National Identity Card of Owner', 'Business Registration/Sole Proprietorship Certificate'],
+        };
+        FORM4_COMMON.forEach((label) => {
+          if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type: 'Common', status: 'NONE' }); }
+        });
+        partyTypes.forEach((type: string) => {
+          (FORM4_BY_TYPE[type] || []).forEach((label) => {
+            if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type, status: 'NONE' }); }
+          });
+        });
       } else if (formConfig?.docs?.length) {
         formConfig.docs.forEach((doc) => {
           const normalizedType = doc.type.replace('-', ' ');
@@ -251,9 +264,13 @@ export async function POST(req: NextRequest) {
         { role: 'BUM', approverName: bumName, approverEmail: '', status: 'PENDING' },
         { role: 'FBP', approverName: fbpName, approverEmail: '', status: 'PENDING' },
       ];
-      // Form 1 and others include Cluster Head
+      // Form 1 and others include Cluster Head; Form 2 also includes CEO
       if ((formId || 1) !== 3) {
         approvalsData.push({ role: 'CLUSTER_HEAD', approverName: clusterName, approverEmail: '', status: 'PENDING' });
+      }
+      // Form 2 requires CEO approval after first-level approvers
+      if ((formId || 1) === 2) {
+        approvalsData.push({ role: 'CEO', approverName: '', approverEmail: '', status: 'PENDING' });
       }
 
       return await tx.submission.create({
@@ -275,7 +292,7 @@ export async function POST(req: NextRequest) {
           courtOfficerId: courtOfficerId || null,
           parentId: parentId || null,
           isResubmission: isResubmission || false,
-          loStage: (formId === 2 ? 'PENDING_CEO' : formId === 3 ? 'PENDING_LEGAL_GM' : 'PENDING_GM'),
+          loStage: (formId === 2 ? 'PENDING_CEO' : 'PENDING_LEGAL_GM'),
           legalGmStage: 'INITIAL_REVIEW',
           bumId: bumId || null,
           fbpId: fbpId || null,

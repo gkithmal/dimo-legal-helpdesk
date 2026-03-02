@@ -17,7 +17,7 @@ import {
 type ApprovalStatus = 'PENDING' | 'APPROVED' | 'SENT_BACK' | 'CANCELLED';
 type LegalGMStage = 'INITIAL_REVIEW' | 'FINAL_APPROVAL';
 
-type SpecialApprover = { id: string; department: string; email: string };
+type SpecialApprover = { id: string; department: string; email: string; name?: string };
 type LogEntry = { id: number; actor: string; role: string; action: string; comment?: string; timestamp: string };
 type CommentEntry = { id: number; author: string; role: string; text: string; time: string };
 
@@ -47,22 +47,6 @@ type Submission = {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 // LEGAL_OFFICERS loaded dynamically from API
-
-const DEPARTMENTS = [
-  'Corp Comm', 'HRD', 'Finance Department',
-  'Group Internal Audit & Compliance', 'Facilities Department',
-  'Supply Chain', 'IT Department',
-];
-
-const DEPT_APPROVERS: Record<string, string[]> = {
-  'Corp Comm':                         ['nimal.perera@dimolanka.com', 'sumudu.silva@dimolanka.com'],
-  'HRD':                               ['dilrukshi.kurukulasuriya@dimolanka.com', 'kasun.weerasinghe@dimolanka.com'],
-  'Finance Department':                ['malini.jayasekera@dimolanka.com', 'rohan.dissanayake@dimolanka.com'],
-  'Group Internal Audit & Compliance': ['tharanga.bandara@dimolanka.com', 'ishara.rathnayake@dimolanka.com'],
-  'Facilities Department':             ['pradeep.senanayake@dimolanka.com', 'amali.wijesinghe@dimolanka.com'],
-  'Supply Chain':                      ['nuwan.rajapaksa@dimolanka.com', 'chaminda.perera@dimolanka.com'],
-  'IT Department':                     ['ranjan.gunaw@dimolanka.com', 'dinesh.lakmal@dimolanka.com'],
-};
 
 const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head' };
 
@@ -306,20 +290,35 @@ function SpecialApprovalsModal({ existing, onSave, onClose }: {
   existing: SpecialApprover[]; onSave: (approvers: SpecialApprover[]) => void; onClose: () => void;
 }) {
   const [approvers, setApprovers] = useState<SpecialApprover[]>(existing);
+  const [availableUsers, setAvailableUsers] = useState<{ id: string; name: string; email: string; department: string }[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [newDept, setNewDept] = useState('');
   const [newEmail, setNewEmail] = useState('');
+  const [newName, setNewName] = useState('');
 
-  const toggle = (dept: string, email: string) => {
-    const exists = approvers.find((a) => a.department === dept);
-    if (exists) setApprovers((prev) => prev.filter((a) => a.department !== dept));
-    else setApprovers((prev) => [...prev, { id: Date.now().toString(), department: dept, email }]);
+  useEffect(() => {
+    fetch('/api/users')
+      .then(r => r.json())
+      .then(d => {
+        if (d.success) setAvailableUsers(
+          d.data.filter((u: any) => u.role === 'SPECIAL_APPROVER' && u.isActive)
+                .map((u: any) => ({ id: u.id, name: u.name || u.email, email: u.email, department: u.department || 'Special Approver' }))
+        );
+      }).catch(() => {})
+      .finally(() => setLoadingUsers(false));
+  }, []);
+
+  const toggle = (user: { id: string; name: string; email: string; department: string }) => {
+    const exists = approvers.find((a) => a.email === user.email);
+    if (exists) setApprovers((prev) => prev.filter((a) => a.email !== user.email));
+    else setApprovers((prev) => [...prev, { id: user.id, department: user.department, email: user.email, name: user.name }]);
   };
 
   const handleAddNew = () => {
     if (!newDept || !newEmail) return;
-    setApprovers((prev) => [...prev, { id: Date.now().toString(), department: newDept, email: newEmail }]);
-    setNewDept(''); setNewEmail(''); setShowAddForm(false);
+    setApprovers((prev) => [...prev, { id: Date.now().toString(), department: newDept, email: newEmail, name: newName || newEmail }]);
+    setNewDept(''); setNewEmail(''); setNewName(''); setShowAddForm(false);
   };
 
   return (
@@ -327,45 +326,50 @@ function SpecialApprovalsModal({ existing, onSave, onClose }: {
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
-          <span className="text-white font-bold">Special Approvals</span>
+          <span className="text-white font-bold">Special Approvals (Optional)</span>
           <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white"><X className="w-4 h-4" /></button>
         </div>
         <div className="p-5">
-          <div className="space-y-2 mb-4">
-            {DEPARTMENTS.map((dept) => {
-              const selected = approvers.find((a) => a.department === dept);
-              const emails = DEPT_APPROVERS[dept] || [];
-              return (
-                <div key={dept} className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 border transition-all
-                  ${selected ? 'bg-[#EEF3F8] border-[#1A438A]/30' : 'bg-slate-50 border-slate-200'}`}>
-                  <input type="checkbox" checked={!!selected}
-                    onChange={() => toggle(dept, selected?.email || emails[0] || '')}
-                    className="w-4 h-4 accent-[#1A438A] flex-shrink-0" />
-                  <span className="text-sm font-medium text-slate-700 flex-1">{dept}</span>
-                  {selected && (
-                    <div className="relative">
-                      <select value={selected.email}
-                        onChange={(e) => setApprovers((prev) => prev.map((a) => a.department === dept ? { ...a, email: e.target.value } : a))}
-                        className="text-xs bg-white border border-[#1A438A]/30 rounded-lg px-2 py-1.5 text-[#1A438A] font-medium focus:outline-none appearance-none pr-6 max-w-[200px]">
-                        {emails.map((e) => <option key={e} value={e}>{e}</option>)}
-                      </select>
-                      <ChevronDown className="absolute right-1.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[#1A438A] pointer-events-none" />
+          {loadingUsers ? (
+            <div className="flex items-center justify-center py-8 text-slate-400">
+              <Loader2 className="w-5 h-5 animate-spin mr-2" /> Loading approvers...
+            </div>
+          ) : (
+            <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+              {availableUsers.length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">No special approvers configured in the system.</p>
+              ) : availableUsers.map((user) => {
+                const selected = !!approvers.find((a) => a.email === user.email);
+                return (
+                  <div key={user.email} className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 border transition-all cursor-pointer
+                    ${selected ? 'bg-[#EEF3F8] border-[#1A438A]/30' : 'bg-slate-50 border-slate-200 hover:border-slate-300'}`}
+                    onClick={() => toggle(user)}>
+                    <input type="checkbox" checked={selected} onChange={() => {}} className="w-4 h-4 accent-[#1A438A] flex-shrink-0 pointer-events-none" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-slate-700">{user.name}</p>
+                      <p className="text-[11px] text-slate-400">{user.department} · {user.email}</p>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    {selected && <CheckCircle2 className="w-4 h-4 text-[#1A438A] flex-shrink-0" />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           {showAddForm && (
             <div className="border border-[#1A438A]/20 rounded-xl p-4 mb-4 bg-[#EEF3F8]/50 space-y-3">
-              <p className="text-[11px] font-bold uppercase tracking-wider text-[#1A438A]">Add New Approver</p>
+              <p className="text-[11px] font-bold uppercase tracking-wider text-[#1A438A]">Add Approver Manually</p>
+              <div>
+                <label className="block text-[11px] text-slate-500 mb-1">Name</label>
+                <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Approver name..."
+                  className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A]" />
+              </div>
               <div>
                 <label className="block text-[11px] text-slate-500 mb-1">Department</label>
                 <input value={newDept} onChange={(e) => setNewDept(e.target.value)} placeholder="Department name..."
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A]" />
               </div>
               <div>
-                <label className="block text-[11px] text-slate-500 mb-1">Approver Email</label>
+                <label className="block text-[11px] text-slate-500 mb-1">Email</label>
                 <input value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="approver@dimolanka.com"
                   className="w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A]" />
               </div>
@@ -373,18 +377,33 @@ function SpecialApprovalsModal({ existing, onSave, onClose }: {
                 <button onClick={() => setShowAddForm(false)} className="flex-1 py-2 rounded-lg text-sm border border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
                 <button onClick={handleAddNew} disabled={!newDept || !newEmail}
                   className="flex-1 py-2 rounded-lg text-sm text-white font-bold disabled:opacity-50"
-                  style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>Add Approver</button>
+                  style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>Add</button>
+              </div>
+            </div>
+          )}
+          {approvers.length > 0 && (
+            <div className="mb-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
+              <p className="text-[11px] font-bold text-amber-700 mb-1">{approvers.length} special approver(s) selected:</p>
+              <div className="flex flex-wrap gap-1">
+                {approvers.map(a => (
+                  <span key={a.email} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 flex items-center gap-1">
+                    {a.name || a.email}
+                    <button onClick={(e) => { e.stopPropagation(); setApprovers(p => p.filter(x => x.email !== a.email)); }} className="hover:text-red-600">×</button>
+                  </span>
+                ))}
               </div>
             </div>
           )}
           <div className="flex gap-3">
             <button onClick={() => setShowAddForm(true)}
               className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-[#1A438A] text-[#1A438A] hover:bg-[#EEF3F8] transition-all flex items-center justify-center gap-1.5">
-              <Plus className="w-4 h-4" /> Add New Approver
+              <Plus className="w-4 h-4" /> Add Manually
             </button>
             <button onClick={() => { onSave(approvers); onClose(); }}
               className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95"
-              style={{ background: 'linear-gradient(135deg, #AC9C2F 0%, #c9b535 100%)' }}>OK</button>
+              style={{ background: 'linear-gradient(135deg, #AC9C2F 0%, #c9b535 100%)' }}>
+              {approvers.length === 0 ? 'Skip' : 'Confirm'}
+            </button>
           </div>
         </div>
       </div>
@@ -578,6 +597,12 @@ function LegalGMPageContent() {
           comment: comment || null,
           approverName: session?.user?.name || '',
           approverEmail: session?.user?.email || '',
+          assignedOfficer: legalOfficers.find(o => o.name === assignedOfficer.name)?.id || assignedOfficer.name || '',
+          specialApprovers: action === 'APPROVED' ? specialApprovers.map(sa => ({
+            email: sa.email,
+            name: sa.name || sa.email,
+            dept: sa.department,
+          })) : [],
         }),
       });
       const data = await res.json();
@@ -588,7 +613,7 @@ function LegalGMPageContent() {
         actor: session?.user?.name || 'Legal GM',
         role: 'Legal GM',
         action: action === 'APPROVED'
-          ? (stage === 'FINAL_APPROVAL' ? 'Final Approved — Sent to Legal Officer for completion' : 'Approved — OK to Proceed')
+          ? (stage === 'FINAL_APPROVAL' ? 'Final Approved — Sent to Legal Officer for completion' : specialApprovers.length > 0 ? `Approved — Routing through ${specialApprovers.length} special approver(s)` : 'Approved — OK to Proceed')
           : action === 'SENT_BACK' ? 'Sent Back to Initiator'
           : 'Cancelled and Rejected',
         comment,
@@ -615,12 +640,12 @@ function LegalGMPageContent() {
 
   const postCommentToAPI = async (text: string) => {
     if (!submissionId) return;
-    fetch(`/api/submissions/${submissionId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ authorName: "Dinali Gurusinghe", authorRole: "LEGAL_GM", text }) });
+    fetch(`/api/submissions/${submissionId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ authorName: session?.user?.name || 'Legal GM', authorRole: "LEGAL_GM", text }) });
   };
 
   const handlePostComment = () => {
     if (!commentInput.trim()) return;
-    setComments((prev) => [...prev, { id: Date.now(), author: 'Dinali Gurusinghe', role: 'Legal GM', text: commentInput.trim(), time: 'Just now' }]);
+    setComments((prev) => [...prev, { id: Date.now(), author: session?.user?.name || 'Legal GM', role: 'Legal GM', text: commentInput.trim(), time: 'Just now' }]);
     setCommentInput('');
   };
 
@@ -683,7 +708,7 @@ function LegalGMPageContent() {
           <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-400 rounded-full border-2 border-[#1A438A]" />
         </div>
         <div className="text-center">
-          <p className="text-white text-[10px] font-semibold">Dinali</p>
+          <p className="text-white text-[10px] font-semibold">{session?.user?.name?.split(' ')[0] || 'Legal GM'}</p>
           <p className="text-white/40 text-[9px]">GM Legal</p>
         </div>
         <div className="w-8 h-px bg-white/10" />

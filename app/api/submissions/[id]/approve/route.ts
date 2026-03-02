@@ -41,6 +41,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       const all = await prisma.submissionApproval.findMany({ where: { submissionId: id } });
       const relevantApprovals = submission.formId === 3
         ? all.filter((a) => ['BUM', 'FBP'].includes(a.role))
+        : submission.formId === 2
+        ? all.filter((a) => ['BUM', 'FBP', 'CLUSTER_HEAD'].includes(a.role))
         : all;
       const allApproved = relevantApprovals.every((a) => a.status === 'APPROVED');
       let newStatus = submission.status;
@@ -75,7 +77,49 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       if (action === 'APPROVED') {
         if (isFinal) {
-          if (isForm3) {
+          // FINAL_APPROVAL: optional special approvers before LO finalizes
+          const gmSpecialApprovers: { email: string; name: string; dept: string }[] = body.specialApprovers || [];
+          if (gmSpecialApprovers.length > 0) {
+            // Cancel any existing pending special approvers for this stage
+            await prisma.submissionSpecialApprover.updateMany({
+              where: { submissionId: id, status: 'PENDING' },
+              data: { status: 'CANCELLED' },
+            });
+            // Create new special approver records assigned by LEGAL_GM for FINAL stage
+            for (const sa of gmSpecialApprovers) {
+              await prisma.submissionSpecialApprover.create({
+                data: {
+                  submissionId: id,
+                  approverEmail: sa.email,
+                  approverName: sa.name || sa.email,
+                  department: sa.dept || 'Special Approver',
+                  assignedBy: 'LEGAL_GM_FINAL',
+                  status: 'PENDING',
+                },
+              });
+            }
+            if (isForm3) {
+              await prisma.submission.update({
+                where: { id },
+                data: {
+                  status: 'PENDING_SPECIAL_APPROVER',
+                  legalGmStage: 'FINAL_APPROVAL',
+                  loStage: 'POST_GM_APPROVAL',
+                  updatedAt: new Date(),
+                },
+              });
+            } else {
+              await prisma.submission.update({
+                where: { id },
+                data: {
+                  status: 'PENDING_SPECIAL_APPROVER',
+                  legalGmStage: 'FINAL_APPROVAL',
+                  loStage: 'FINALIZATION',
+                  updatedAt: new Date(),
+                },
+              });
+            }
+          } else if (isForm3) {
             // Form 3: after final GM approval → Court Officer does final confirmation
             await prisma.submission.update({
               where: { id },
@@ -97,18 +141,52 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
             });
           }
         } else {
-          // Initial OK to Proceed
-          await prisma.submission.update({
-            where: { id },
-            data: {
-              status: 'PENDING_LEGAL_OFFICER',
-              legalGmStage: 'INITIAL_REVIEW',
-              assignedLegalOfficer: assignedOfficer || submission.assignedLegalOfficer || '',
-              // Form 3 gets Court Officer stage, Form 2 goes straight to initial review
-              loStage: isForm3 ? 'ASSIGN_COURT_OFFICER' : 'INITIAL_REVIEW',
-              updatedAt: new Date(),
-            },
-          });
+          // Initial OK to Proceed — check for special approvers
+          const gmSpecialApprovers: { email: string; name: string; dept: string }[] = body.specialApprovers || [];
+          const targetLoStage = isForm3 ? 'ASSIGN_COURT_OFFICER' : 'INITIAL_REVIEW';
+          const targetAssignedOfficer = assignedOfficer || submission.assignedLegalOfficer || '';
+
+          if (gmSpecialApprovers.length > 0) {
+            // Cancel any existing pending special approvers
+            await prisma.submissionSpecialApprover.updateMany({
+              where: { submissionId: id, status: 'PENDING' },
+              data: { status: 'CANCELLED' },
+            });
+            for (const sa of gmSpecialApprovers) {
+              await prisma.submissionSpecialApprover.create({
+                data: {
+                  submissionId: id,
+                  approverEmail: sa.email,
+                  approverName: sa.name || sa.email,
+                  department: sa.dept || 'Special Approver',
+                  assignedBy: 'LEGAL_GM_INITIAL',
+                  status: 'PENDING',
+                },
+              });
+            }
+            await prisma.submission.update({
+              where: { id },
+              data: {
+                status: 'PENDING_SPECIAL_APPROVER',
+                legalGmStage: 'INITIAL_REVIEW',
+                assignedLegalOfficer: targetAssignedOfficer,
+                loStage: targetLoStage,
+                updatedAt: new Date(),
+              },
+            });
+          } else {
+            // No special approvers → go directly to Legal Officer
+            await prisma.submission.update({
+              where: { id },
+              data: {
+                status: 'PENDING_LEGAL_OFFICER',
+                legalGmStage: 'INITIAL_REVIEW',
+                assignedLegalOfficer: targetAssignedOfficer,
+                loStage: targetLoStage,
+                updatedAt: new Date(),
+              },
+            });
+          }
         }
       } else if (action === 'SENT_BACK') {
         await prisma.submission.update({ where: { id }, data: { status: 'SENT_BACK', updatedAt: new Date() } });
@@ -238,17 +316,51 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
       if (action === 'APPROVED') {
         const all = await prisma.submissionSpecialApprover.findMany({ where: { submissionId: id } });
-        if (all.every((a) => a.status === 'APPROVED')) {
-          // Return to Court Officer if triggered from CO stage, else Legal Officer
+        const pendingOnes = all.filter((a) => a.status === 'PENDING');
+        if (pendingOnes.length === 0) {
+          // All approved — determine where to route based on who assigned the special approver
           const prevLoStage = submission.loStage;
-          await prisma.submission.update({
-            where: { id },
-            data: {
-              status: prevLoStage === 'PENDING_COURT_OFFICER' ? 'PENDING_COURT_OFFICER' : 'PENDING_LEGAL_OFFICER',
-              loStage: prevLoStage === 'PENDING_COURT_OFFICER' ? 'PENDING_COURT_OFFICER' : 'REVIEW_FOR_GM',
-              updatedAt: new Date(),
-            },
-          });
+          const lastApprover = all[all.length - 1];
+          const assignedBy = lastApprover?.assignedBy || 'LEGAL_OFFICER';
+
+          if (prevLoStage === 'PENDING_COURT_OFFICER') {
+            // Assigned by Court Officer → return to Court Officer
+            await prisma.submission.update({
+              where: { id },
+              data: { status: 'PENDING_COURT_OFFICER', loStage: 'PENDING_COURT_OFFICER', updatedAt: new Date() },
+            });
+          } else if (assignedBy === 'LEGAL_GM_INITIAL') {
+            // Assigned by Legal GM during initial review → go to Legal Officer for review
+            await prisma.submission.update({
+              where: { id },
+              data: {
+                status: 'PENDING_LEGAL_OFFICER',
+                loStage: 'INITIAL_REVIEW',
+                updatedAt: new Date(),
+              },
+            });
+          } else if (assignedBy === 'LEGAL_GM_FINAL') {
+            // Assigned by Legal GM during final approval → go to Legal Officer for finalization
+            const targetLoStage = prevLoStage === 'FINALIZATION' ? 'FINALIZATION' : 'POST_GM_APPROVAL';
+            await prisma.submission.update({
+              where: { id },
+              data: {
+                status: 'PENDING_LEGAL_OFFICER',
+                loStage: targetLoStage,
+                updatedAt: new Date(),
+              },
+            });
+          } else {
+            // Assigned by Legal Officer → return to Legal Officer (REVIEW_FOR_GM)
+            await prisma.submission.update({
+              where: { id },
+              data: {
+                status: 'PENDING_LEGAL_OFFICER',
+                loStage: 'REVIEW_FOR_GM',
+                updatedAt: new Date(),
+              },
+            });
+          }
         }
       } else if (action === 'SENT_BACK' || action === 'CANCELLED') {
         await prisma.submission.update({

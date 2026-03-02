@@ -20,8 +20,9 @@ async function main() {
     { email: 'mangala.wick@testdimo.com',    name: 'Mangala Wickramasinghe', role: 'CLUSTER_HEAD',  department: 'Cluster' },
     { email: 'sandalie.gomes@testdimo.com',  name: 'Sandalie Gomes',         role: 'LEGAL_OFFICER', department: 'Legal' },
     { email: 'dinali.guru@testdimo.com',     name: 'Dinali Gurusinghe',      role: 'LEGAL_GM',         department: 'Legal' },
+    { email: 'ceo@testdimo.com',             name: 'Dimo CEO',               role: 'CEO',              department: 'Executive' },
     { email: 'special.approver@testdimo.com', name: 'Special Approver',        role: 'SPECIAL_APPROVER', department: 'Legal' },
-    { email: 'finance.team@testdimo.com',     name: 'Finance Team',            role: 'FINANCE_TEAM',     department: 'Finance' },
+    { email: 'finance.team@testdimo.com',     name: 'Finance Team',            role: 'FINANCE',          department: 'Finance' },
     { email: 'court.officer@testdimo.com',    name: 'Ruwan Fernando',          role: 'COURT_OFFICER',    department: 'Legal' },
   ];
 

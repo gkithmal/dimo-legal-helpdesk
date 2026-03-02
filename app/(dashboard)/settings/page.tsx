@@ -10,13 +10,18 @@ import {
   Loader2, AlertCircle, Save,
 } from 'lucide-react';
 
-type Role = 'Legal GM'|'Legal Officer'|'Special Approver'|'Approver - BUM'|'Approver - FBP'|'Approver - Cluster Head'|'Initiator'|'';
+type Role = 'LEGAL_GM'|'LEGAL_OFFICER'|'SPECIAL_APPROVER'|'BUM'|'FBP'|'CLUSTER_HEAD'|'INITIATOR'|'CEO'|'COURT_OFFICER'|'FINANCE'|'';
 type StaffMember = { id:string; name:string; email:string; role:Role; forms:number[]; isActive:boolean; };
 type DirectoryUser = { id:string; name:string; email:string; role:string; };
 type RequiredDoc = { id:string; label:string; type:string; };
 type FormConfig = { formId:number; formName:string; docs:RequiredDoc[]; instructions:string; };
 
-const ROLES: Role[] = ['Legal GM','Legal Officer','Special Approver','Approver - BUM','Approver - FBP','Approver - Cluster Head','Initiator'];
+const ROLES: Role[] = ['LEGAL_GM','LEGAL_OFFICER','SPECIAL_APPROVER','BUM','FBP','CLUSTER_HEAD','INITIATOR','CEO','COURT_OFFICER','FINANCE'];
+const ROLE_LABELS: Record<string, string> = {
+  LEGAL_GM:'Legal GM', LEGAL_OFFICER:'Legal Officer', SPECIAL_APPROVER:'Special Approver',
+  BUM:'Approver - BUM', FBP:'Approver - FBP', CLUSTER_HEAD:'Approver - Cluster Head',
+  INITIATOR:'Initiator', CEO:'CEO', COURT_OFFICER:'Court Officer', FINANCE:'Finance',
+};
 const DOC_TYPES = ['Company','Partnership','Sole-proprietorship','Individual','Common'];
 const ALL_FORMS = [
   {id:1,name:'Contract Review Form'},{id:2,name:'Lease Agreement'},
@@ -73,7 +78,7 @@ function LegalStaffTab() {
   const loadUsers=useCallback(async()=>{
     setLoadingStaff(true);setApiError('');
     try{
-      const res=await fetch('/api/users');const data=await res.json();
+      const res=await fetch('/api/users?includeInactive=true');const data=await res.json();
       if(!res.ok||!data.success)throw new Error(data.error||'Failed to load users');
       const mapped:StaffMember[]=data.data.map((u:{id:string;name:string;email:string;role:string;formIds?:number[];isActive?:boolean})=>({id:u.id,name:u.name,email:u.email,role:(u.role as Role)||'',forms:u.formIds||[],isActive:u.isActive!==false}));
       setStaff(mapped);
@@ -146,7 +151,7 @@ function LegalStaffTab() {
               ?<div className="flex items-center justify-center py-8"><Loader2 className="w-5 h-5 text-slate-300 animate-spin"/></div>
               :staff.map((s)=>(
                 <button key={s.id} onClick={()=>selectMember(s)} className={`w-full flex items-center justify-between px-3 py-2.5 text-left transition-colors border-l-4 ${s.id===selectedId?'bg-[#EEF3F8] border-[#1A438A]':'hover:bg-slate-50 border-transparent'}`}>
-                  <div className="flex-1 min-w-0"><p className="text-sm text-slate-700 font-medium truncate">{s.name}</p><p className="text-[10px] text-slate-400 truncate">{s.role||'No role assigned'}</p></div>
+                  <div className="flex-1 min-w-0"><p className="text-sm text-slate-700 font-medium truncate">{s.name}</p><p className="text-[10px] text-slate-400 truncate">{ROLE_LABELS[s.role]||s.role||'No role assigned'}</p></div>
                   <div className="w-5 h-5 rounded-full border-2 border-slate-300 flex items-center justify-center flex-shrink-0 ml-2">{s.id===selectedId&&<div className="w-2.5 h-2.5 rounded-full bg-[#1A438A]"/>}</div>
                 </button>
               ))
@@ -165,7 +170,7 @@ function LegalStaffTab() {
           <div className="relative -mt-2">
             <select value={displayRole} disabled={!editing} onChange={(e)=>setEditRole(e.target.value as Role)} className={`w-full px-3.5 py-2.5 rounded-xl border-2 text-sm appearance-none focus:outline-none transition-all ${editing?'border-[#1A438A] bg-white text-slate-800':'border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed'}`}>
               <option value="">Select role...</option>
-              {ROLES.map((r)=><option key={r} value={r}>{r}</option>)}
+              {ROLES.map((r)=><option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
             </select>
             <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"/>
           </div>
@@ -325,15 +330,16 @@ function FormSettingsTab() {
 }
 
 export default function SettingsPage() {
-  const {data:session}=useSession();
+  const {data:session, status}=useSession();
   const router=useRouter();
   const [activeTab,setActiveTab]=useState<'staff'|'forms'>('staff');
   const userName=session?.user?.name||'Legal GM';
   useEffect(()=>{
-    if(session && (session.user as any)?.role !== 'LEGAL_GM'){
+    if(status === 'loading') return;
+    if(status === 'authenticated' && (session.user as any)?.role !== 'LEGAL_GM'){
       router.replace(ROUTES.HOME);
     }
-  },[session,router]);
+  },[session,status,router]);
   const userInitial=getInitials(userName);
   const [firstName,lastName]=userName.split(' ');
   return(

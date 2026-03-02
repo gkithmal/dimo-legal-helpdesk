@@ -2,12 +2,15 @@ import { create } from 'zustand';
 
 export type UserRole =
   | 'INITIATOR'
-  | 'APPROVER_BUM'
-  | 'APPROVER_FBP'
-  | 'APPROVER_CLUSTER_HEAD'
+  | 'BUM'
+  | 'FBP'
+  | 'CLUSTER_HEAD'
   | 'LEGAL_GM'
   | 'LEGAL_OFFICER'
-  | 'SPECIAL_APPROVER';
+  | 'SPECIAL_APPROVER'
+  | 'CEO'
+  | 'COURT_OFFICER'
+  | 'FINANCE';
 
 export type LegalGMStage = 'INITIAL_REVIEW' | 'FINAL_APPROVAL';
 export type LOStage = 'PENDING_GM' | 'REASSIGNED' | 'ACTIVE' | 'POST_GM_APPROVAL';
@@ -43,7 +46,7 @@ type AppState = {
 
 export const useAppStore = create<AppState>((set) => ({
   currentRole: 'INITIATOR',
-  currentUser: { name: 'Oliva Perera', email: 'oliva.perera@dimolanka.com' },
+  currentUser: { name: '', email: '' },
   activeSubmission: null,
   legalGMStage: 'INITIAL_REVIEW',
   loStage: 'PENDING_GM',
