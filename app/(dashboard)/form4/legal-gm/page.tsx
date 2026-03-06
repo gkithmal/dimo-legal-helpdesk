@@ -490,7 +490,7 @@ function LegalGMPageContent() {
   const [apiError, setApiError] = useState('');
 
   // ── UI state ──
-  const [assignedOfficer, setAssignedOfficer] = useState({ name: '', email: '' });
+  const [assignedOfficer, setAssignedOfficer] = useState({ name: '', email: '', id: '' });
   const [specialApprovers, setSpecialApprovers] = useState<SpecialApprover[]>([]);
   const [comments, setComments] = useState<CommentEntry[]>([]);
   const [commentInput, setCommentInput] = useState('');
@@ -513,13 +513,13 @@ function LegalGMPageContent() {
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load');
       const s = data.data;
       // Redirect to correct form if this submission belongs to a different form
-      if (s.formId && s.formId !== 1) {
+      if (s.formId && s.formId !== 4) {
         router.replace(`/form${s.formId}/legal-gm?id=${submissionId}`);
         return;
       }
       setSubmission(s);
       const officerName = s.legalOfficerName || s.assignedLegalOfficer || '';
-      setAssignedOfficer({ name: officerName, email: '' });
+      setAssignedOfficer({ name: officerName, email: '', id: s.assignedLegalOfficer || '' });
 
       // Seed log from approvals
       const approvalEntries = s.approvals
@@ -597,7 +597,7 @@ function LegalGMPageContent() {
           comment: comment || null,
           approverName: session?.user?.name || '',
           approverEmail: session?.user?.email || '',
-          assignedOfficer: legalOfficers.find(o => o.name === assignedOfficer.name)?.id || assignedOfficer.name || '',
+          assignedOfficer: assignedOfficer.id || legalOfficers.find(o => o.name === assignedOfficer.name)?.id || '',
           specialApprovers: action === 'APPROVED' ? specialApprovers.map(sa => ({
             email: sa.email,
             name: sa.name || sa.email,
@@ -652,16 +652,20 @@ function LegalGMPageContent() {
   // ── Derived ──
   const stage: LegalGMStage = (submission?.status === 'PENDING_LEGAL_GM_FINAL' || submission?.legalGmStage === 'FINAL_APPROVAL') ? 'FINAL_APPROVAL' : 'INITIAL_REVIEW';
   const isInitial = stage === 'INITIAL_REVIEW';
+  const gmAlreadyActed = !!submission && !['PENDING_LEGAL_GM', 'PENDING_LEGAL_GM_FINAL'].includes(submission.status);
   const activeStep = (() => {
-    if (!submission) return 0;
-    const { status, loStage } = submission;
+    const status = submission?.status || '';
+    const loStage = submission?.loStage || '';
+    if (status === 'DRAFT') return 0;
+    if (status === 'PENDING_APPROVAL' || status === 'SENT_BACK') return 1;
     if (status === 'PENDING_LEGAL_GM') return 2;
-    if (status === 'PENDING_LEGAL_OFFICER' && loStage === 'ACTIVE') return 3;
+    if (status === 'PENDING_LEGAL_OFFICER' && (loStage === 'ACTIVE' || loStage === 'INITIAL_REVIEW' || loStage === 'ASSIGN_COURT_OFFICER')) return 3;
+    if (status === 'PENDING_SPECIAL_APPROVER' && (loStage === 'FINALIZATION' || loStage === 'POST_GM_APPROVAL')) return 4;
     if (status === 'PENDING_SPECIAL_APPROVER') return 3;
     if (status === 'PENDING_LEGAL_GM_FINAL') return 4;
-    if (status === 'PENDING_LEGAL_OFFICER' && loStage === 'POST_GM_APPROVAL') return 5;
-    if (status === 'COMPLETED') return 5;
-    return 2;
+    if (status === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
+    if (status === 'COMPLETED' || status === 'CANCELLED') return 5;
+    return 1;
   })();
   const steps = WORKFLOW_STEPS;
 
@@ -850,7 +854,7 @@ function LegalGMPageContent() {
               </button>
             </div>
             <div className="p-3 space-y-1.5">
-            {submission.documents.filter(doc => submission.parties.map(p => p.type).includes(doc.type) || doc.type === 'Common').map((doc, i) => (
+            {submission.documents.filter(doc => !doc.type?.startsWith('LO_PREPARED')).map((doc, i) => (
                 <div key={doc.id}
                   onClick={() => doc.fileUrl && window.open(doc.fileUrl, '_blank')}
                   className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
@@ -970,7 +974,7 @@ function LegalGMPageContent() {
                   <p className="text-[9px] text-slate-400 uppercase tracking-wider">Assigned Legal Officer</p>
                   <p className="text-xs font-bold text-[#17293E] truncate">{assignedOfficer.name || '—'}</p>
                 </div>
-                <button onClick={() => setShowReassign(true)} disabled={isActing}
+                <button onClick={() => setShowReassign(true)} disabled={isActing || gmAlreadyActed}
                     className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-white flex-shrink-0 transition-all active:scale-95 disabled:opacity-50"
                     style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
                   Reassign
@@ -980,17 +984,17 @@ function LegalGMPageContent() {
 
             {/* Main action buttons */}
             <div className="flex gap-2">
-              <button onClick={() => setShowConfirmAction('cancel')} disabled={isActing}
+              <button onClick={() => setShowConfirmAction('cancel')} disabled={isActing || gmAlreadyActed}
                 className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 shadow-lg shadow-red-500/20 disabled:opacity-70"
                 style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>
                 Cancel
               </button>
-              <button onClick={() => setShowConfirmAction('sendback')} disabled={isActing}
+              <button onClick={() => setShowConfirmAction('sendback')} disabled={isActing || gmAlreadyActed}
                 className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 shadow-lg shadow-orange-500/20 disabled:opacity-70"
                 style={{ background: 'linear-gradient(135deg, #f97316, #ea580c)' }}>
                 Send Back
               </button>
-              <button onClick={() => setShowConfirmAction('approve')} disabled={isActing}
+              <button onClick={() => setShowConfirmAction('approve')} disabled={isActing || gmAlreadyActed}
                 className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 shadow-lg shadow-emerald-500/20 disabled:opacity-70 flex items-center justify-center gap-1"
                 style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
                 {isActing ? <Loader2 className="w-4 h-4 animate-spin" /> : isInitial ? 'OK to Proceed' : 'Approve'}
@@ -1003,7 +1007,7 @@ function LegalGMPageContent() {
       {/* ── Modals ── */}
       {showLog      && <ViewLogModal log={log} onClose={() => setShowLog(false)} />}
       {showReassign && <ReassignModal currentOfficer={assignedOfficer.name} officers={legalOfficers} onSave={async (n, e) => {
-  setAssignedOfficer({ name: n, email: e });
+  setAssignedOfficer({ name: n, email: e, id: legalOfficers.find(o => o.name === n)?.id || '' });
   if (submissionId) {
     const officerId = legalOfficers.find(o => o.name === n)?.id || n;
     await fetch(`/api/submissions/${submissionId}`, {

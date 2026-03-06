@@ -756,7 +756,7 @@ function Form1PageContent() {
     { type: '', name: '' }, { type: '', name: '' }, { type: '', name: '' },
     { type: '', name: '' }, { type: '', name: '' },
   ]);
-  const [sapCostCenter, setSapCostCenter] = useState('000003999 - IT Department');
+  const [sapCostCenter, setSapCostCenter] = useState('');
   const [scopeOfAgreement, setScopeOfAgreement] = useState('');
   const [term, setTerm] = useState('');
   const [lkrValue, setLkrValue] = useState('');
@@ -983,20 +983,24 @@ function Form1PageContent() {
   const removeFileFromDoc = (docKey: string, fileId: string) =>
     setDocFiles((prev) => ({ ...prev, [docKey]: (prev[docKey] || []).filter((f) => f.id !== fileId) }));
 
-  const statusToStep: Record<string, number> = {
-    'DRAFT': 0,
-    'PENDING_APPROVAL': 1,
-    'PENDING_LEGAL_GM': 2,
-    'PENDING_LEGAL_OFFICER': 3,
-    'PENDING_SPECIAL_APPROVER': 3,
-    'PENDING_LEGAL_GM_FINAL': 4,
-    'COMPLETED': 5,
-    'CANCELLED': 5,
-    'SENT_BACK': 1,
-  };
   const [submissionStatus, setSubmissionStatus] = useState('');
-  const canUploadDocs = !isReadOnly || ['PENDING_APPROVAL', 'SENT_BACK', 'DRAFT'].includes(submissionStatus);
-  const currentStep = mode === 'view' ? (statusToStep[submissionStatus] ?? 1) : 0;
+  const isTerminalStatus = ['COMPLETED', 'CANCELLED'].includes(submissionStatus);
+  const canUploadDocs = !isTerminalStatus;
+  const canRemoveDocs = !isReadOnly;
+  const currentStep = (() => {
+    if (mode !== 'view') return 0;
+    const loStage = (submissionData as any)?.loStage || '';
+    if (submissionStatus === 'DRAFT') return 0;
+    if (submissionStatus === 'PENDING_APPROVAL' || submissionStatus === 'SENT_BACK') return 1;
+    if (submissionStatus === 'PENDING_LEGAL_GM') return 2;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'ACTIVE' || loStage === 'INITIAL_REVIEW' || loStage === 'ASSIGN_COURT_OFFICER')) return 3;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER' && (loStage === 'FINALIZATION' || loStage === 'POST_GM_APPROVAL')) return 4;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 3;
+    if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 4;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
+    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 5;
+    return 1;
+  })();
 
   return (
     <div className="min-h-screen flex bg-[#f0f4f9]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -1418,7 +1422,7 @@ function Form1PageContent() {
           files={docFiles[uploadPopup.docKey] || []}
           onAdd={(files) => addFilesToDoc(uploadPopup.docKey, files)}
           onRemove={(id) => removeFileFromDoc(uploadPopup.docKey, id)}
-          canRemove={canUploadDocs}
+          canRemove={canRemoveDocs}
           onClose={() => setUploadPopup(null)}
           onConfirm={async () => {
             const files = docFiles[uploadPopup.docKey] || [];

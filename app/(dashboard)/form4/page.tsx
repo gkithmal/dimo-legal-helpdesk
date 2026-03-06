@@ -192,9 +192,9 @@ function SelectField({ value, onChange, options, placeholder, disabled = false, 
   );
 }
 
-function ComboBox({ value, onChange, options, placeholder, disabled = false, hasError = false }: {
+function ComboBox({ value, onChange, options, placeholder, disabled = false, dropUp = false, hasError = false }: {
   value: string; onChange: (v: string) => void; options: string[];
-  placeholder?: string; disabled?: boolean; hasError?: boolean;
+  placeholder?: string; disabled?: boolean; dropUp?: boolean; hasError?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -235,7 +235,7 @@ function ComboBox({ value, onChange, options, placeholder, disabled = false, has
         </button>
       </div>
       {open && !disabled && (
-        <div className="absolute z-30 w-full bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden top-full mt-1.5">
+        <div className={`absolute z-30 w-full bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden ${dropUp ? "bottom-full mb-1.5" : "top-full mt-1.5"}`}>
           <div className="max-h-52 overflow-y-auto">
             {filtered.length === 0 ? (
               <div className="px-3.5 py-4 text-center text-sm text-slate-400">No matches found</div>
@@ -254,9 +254,9 @@ function ComboBox({ value, onChange, options, placeholder, disabled = false, has
   );
 }
 
-function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
+function PanelSection({ title, children, overflowVisible = false }: { title: string; children: React.ReactNode; overflowVisible?: boolean }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+    <div className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm ${overflowVisible ? 'overflow-visible' : 'overflow-hidden'}`}>
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
         <div className="w-0.5 h-4 rounded-full bg-[#1A438A]" />
         <span className="text-[11px] font-bold uppercase tracking-widest text-[#17293E]">{title}</span>
@@ -411,7 +411,7 @@ function Form4PageContent() {
 
   // ── Form 4 fields ──
   const [companyCode, setCompanyCode] = useState('');
-  const [sapCostCenter, setSapCostCenter] = useState('000003999 - IT Department');
+  const [sapCostCenter, setSapCostCenter] = useState('');
   const [ownerType, setOwnerType] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [nicNo, setNicNo] = useState('');
@@ -562,13 +562,23 @@ function Form4PageContent() {
   const errors = submitted ? validate() : [];
   const hasError = (field: string) => submitted && errors.some(e => e.toLowerCase().includes(field.toLowerCase()));
 
-  const canUploadDocs = !isReadOnly || ['PENDING_APPROVAL', 'SENT_BACK', 'DRAFT'].includes(submissionStatus);
-  const statusToStep: Record<string, number> = {
-    DRAFT: 0, PENDING_APPROVAL: 1, PENDING_LEGAL_GM: 2,
-    PENDING_LEGAL_OFFICER: 3, PENDING_SPECIAL_APPROVER: 3,
-    PENDING_LEGAL_GM_FINAL: 4, COMPLETED: 5, CANCELLED: 5, SENT_BACK: 1,
-  };
-  const currentStep = mode === 'view' ? (statusToStep[submissionStatus] ?? 1) : 0;
+  const isTerminalStatus = ['COMPLETED', 'CANCELLED'].includes(submissionStatus);
+  const canUploadDocs = !isTerminalStatus;
+  const canRemoveDocs = !isReadOnly;
+  const currentStep = (() => {
+    if (mode !== 'view') return 0;
+    const loStage = (submissionData as any)?.loStage || '';
+    if (submissionStatus === 'DRAFT') return 0;
+    if (submissionStatus === 'PENDING_APPROVAL' || submissionStatus === 'SENT_BACK') return 1;
+    if (submissionStatus === 'PENDING_LEGAL_GM') return 2;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'ACTIVE' || loStage === 'INITIAL_REVIEW' || loStage === 'ASSIGN_COURT_OFFICER')) return 3;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER' && (loStage === 'FINALIZATION' || loStage === 'POST_GM_APPROVAL')) return 4;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 3;
+    if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 4;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
+    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 5;
+    return 1;
+  })();
 
   const scopePayload = () => JSON.stringify({
     ownerType, ownerName, nicNo, address, contactNo, vehicleNo, make, model, chassisNo,
@@ -990,7 +1000,7 @@ function Form4PageContent() {
           </div>
 
           {/* Approvals */}
-          <PanelSection title="Approvals">
+          <PanelSection title="Approvals" overflowVisible>
             <div className="p-4 space-y-3.5">
               <div>
                 <FieldLabel required>BUM</FieldLabel>
@@ -1004,7 +1014,7 @@ function Form4PageContent() {
               </div>
               <div>
                 <FieldLabel required>Cluster Head</FieldLabel>
-                <ComboBox value={clusterHead} onChange={setClusterHead} options={clusterOptions} placeholder="Type or select Cluster Head..." disabled={isReadOnly} hasError={hasError('cluster head')} />
+                <ComboBox value={clusterHead} onChange={setClusterHead} options={clusterOptions} placeholder="Type or select Cluster Head..." disabled={isReadOnly} hasError={hasError('cluster head')} dropUp />
                 <FieldError message={hasError('cluster head') ? 'Cluster Head is required' : undefined} />
               </div>
             </div>
@@ -1078,7 +1088,7 @@ function Form4PageContent() {
         <UploadPopup docLabel={uploadPopup.docLabel} files={docFiles[uploadPopup.docKey] || []}
           onAdd={(files) => addFilesToDoc(uploadPopup.docKey, files)}
           onRemove={(id) => removeFileFromDoc(uploadPopup.docKey, id)}
-          canRemove={canUploadDocs} onClose={() => setUploadPopup(null)}
+          canRemove={canRemoveDocs} onClose={() => setUploadPopup(null)}
           onConfirm={async () => {
             const files = docFiles[uploadPopup.docKey] || [];
             const newFiles = files.filter(f => !f.fileUrl && f.file);

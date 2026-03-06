@@ -187,6 +187,7 @@ function SpecialApproverForm3Content() {
 
   const [submissionNo,     setSubmissionNo]     = useState('');
   const [submissionStatus, setSubmissionStatus] = useState('');
+  const [submissionLoStage, setSubmissionLoStage] = useState('');
   const [isLoading,        setIsLoading]        = useState(true);
   const [loadError,        setLoadError]        = useState('');
   const [isActing,         setIsActing]         = useState(false);
@@ -224,6 +225,14 @@ function SpecialApproverForm3Content() {
   const [customerData,     setCustomerData]     = useState<Record<string, any>>({});
   const [legalHistory,     setLegalHistory]     = useState<LegalHistoryEntry[]>([]);
 
+  // ── Form 3 litigation case fields (filled by Legal Officer) ──
+  const [f3GmcApprovalNo,   setF3GmcApprovalNo]   = useState('');
+  const [f3CaseNo,          setF3CaseNo]          = useState('');
+  const [f3CaseFillingDate, setF3CaseFillingDate] = useState('');
+  const [f3Council,         setF3Council]         = useState('');
+  const [f3Court,           setF3Court]           = useState('');
+  const [f3Remarks,         setF3Remarks]         = useState('');
+
   // ── Load submission ──
   const loadSubmission = useCallback(async () => {
     if (!submissionId) { setLoadError('No submission ID provided.'); setIsLoading(false); return; }
@@ -234,6 +243,7 @@ function SpecialApproverForm3Content() {
       const s = data.data;
       setSubmissionNo(s.submissionNo);
       setSubmissionStatus(s.status ?? '');
+      setSubmissionLoStage(s.loStage ?? '');
 
       let meta: Record<string, any> = {};
       try { meta = JSON.parse(s.scopeOfAgreement || '{}'); } catch {}
@@ -254,6 +264,13 @@ function SpecialApproverForm3Content() {
       setCustomerType(meta.customerType || '');
       setCustomerData(meta.customerData || {});
       setLegalHistory(meta.legalHistory || []);
+
+      setF3GmcApprovalNo(s.f3GmcApprovalNo || '');
+      setF3CaseNo(s.f3CaseNo || '');
+      setF3CaseFillingDate(s.f3CaseFillingDate || '');
+      setF3Council(s.f3Council || '');
+      setF3Court(s.f3Court || '');
+      setF3Remarks(s.f3Remarks || '');
 
       if (s.approvals?.length) {
         s.approvals.forEach((a: any) => {
@@ -319,13 +336,20 @@ function SpecialApproverForm3Content() {
     setCommentInput('');
   };
 
-  const statusToStep: Record<string, number> = {
-    DRAFT: 0, PENDING_APPROVAL: 1, PENDING_LEGAL_GM: 2,
-    PENDING_LEGAL_OFFICER: 3, PENDING_COURT_OFFICER: 3,
-    PENDING_SPECIAL_APPROVER: 3, PENDING_LEGAL_GM_FINAL: 4,
-    COMPLETED: 5, CANCELLED: 5, SENT_BACK: 1,
-  };
-  const currentStep = statusToStep[submissionStatus] ?? 1;
+  const loStage = submissionLoStage;
+  const currentStep = (() => {
+    if (submissionStatus === 'DRAFT') return 0;
+    if (submissionStatus === 'PENDING_APPROVAL' || submissionStatus === 'SENT_BACK') return 1;
+    if (submissionStatus === 'PENDING_LEGAL_GM') return 2;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'ACTIVE' || loStage === 'INITIAL_REVIEW' || loStage === 'ASSIGN_COURT_OFFICER')) return 3;
+    if (submissionStatus === 'PENDING_COURT_OFFICER') return 3;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER' && (loStage === 'FINALIZATION' || loStage === 'POST_GM_APPROVAL')) return 4;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 3;
+    if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 4;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
+    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 5;
+    return 1;
+  })();
   const isPendingAction = submissionStatus === 'PENDING_SPECIAL_APPROVER';
 
   // ── Loading / error ──
@@ -495,6 +519,18 @@ function SpecialApproverForm3Content() {
                   ))}
                 </>
               )}
+
+              <SectionDivider>Case Details (Litigation)</SectionDivider>
+              <div className="grid grid-cols-2 gap-4">
+                <ReadField label="GMC Approval No" value={f3GmcApprovalNo} />
+                <ReadField label="Case No" value={f3CaseNo} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <ReadField label="Case Filing Date" value={f3CaseFillingDate} />
+                <ReadField label="Council" value={f3Council} />
+              </div>
+              <ReadField label="Court" value={f3Court} />
+              {f3Remarks && <ReadField label="Remarks" value={f3Remarks} />}
             </div>
           </div>
         </div>

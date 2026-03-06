@@ -27,7 +27,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     if (!submission) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
 
     // ── BUM / FBP / CLUSTER_HEAD ───────────────────────────────────────────
-    if (['BUM', 'FBP', 'CLUSTER_HEAD'].includes(role)) {
+    if (['BUM', 'FBP', 'CLUSTER_HEAD', 'GENERAL_MANAGER'].includes(role)) {
       await prisma.submissionApproval.updateMany({
         where: { submissionId: id, role },
         data: {
@@ -39,11 +39,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         },
       });
       const all = await prisma.submissionApproval.findMany({ where: { submissionId: id } });
-      const relevantApprovals = submission.formId === 3
-        ? all.filter((a) => ['BUM', 'FBP'].includes(a.role))
-        : submission.formId === 2
-        ? all.filter((a) => ['BUM', 'FBP', 'CLUSTER_HEAD'].includes(a.role))
-        : all;
+      let relevantApprovals;
+      if (submission.formId === 7) {
+        relevantApprovals = all.filter((a) => ['BUM', 'GENERAL_MANAGER'].includes(a.role));
+      } else if (submission.formId === 3 || submission.formId === 10) {
+        relevantApprovals = all.filter((a) => ['BUM', 'FBP'].includes(a.role));
+      } else if (submission.formId === 2) {
+        relevantApprovals = all.filter((a) => ['BUM', 'FBP', 'CLUSTER_HEAD'].includes(a.role));
+      } else {
+        relevantApprovals = all;
+      }
       const allApproved = relevantApprovals.every((a) => a.status === 'APPROVED');
       let newStatus = submission.status;
       if (action === 'CANCELLED') newStatus = 'CANCELLED';
@@ -73,8 +78,93 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     // ── LEGAL GM ───────────────────────────────────────────────────────────
     if (role === 'LEGAL_GM') {
       const isFinal = submission.legalGmStage === 'FINAL_APPROVAL' || submission.status === 'PENDING_LEGAL_GM_FINAL';
-      const isForm3 = submission.formId === 3;
+      const isForm9 = submission.formId === 9;
+      // Form 3 and Form 10 share the same litigation flow (BUM+FBP → LO → Court Officer)
+      const isForm3 = submission.formId === 3 || submission.formId === 10;
+      const isForm7 = submission.formId === 7;
 
+      // ── Form 9: Title Review stage ────────────────────────────────────────
+      if (isForm9 && submission.legalGmStage === 'F9_TITLE_REVIEW') {
+        if (action === 'APPROVED') {
+          await prisma.submission.update({
+            where: { id },
+            data: { status: 'PENDING_BUM_CONFIRM', updatedAt: new Date() },
+          });
+        } else if (action === 'SENT_BACK') {
+          // Send back to LO for re-verification
+          await prisma.submission.update({
+            where: { id },
+            data: {
+              status: 'PENDING_LEGAL_OFFICER',
+              loStage: 'F9_TITLE_VERIFICATION',
+              legalGmStage: 'INITIAL_REVIEW',
+              updatedAt: new Date(),
+            },
+          });
+        } else if (action === 'CANCELLED') {
+          await prisma.submission.update({
+            where: { id },
+            data: { status: 'CANCELLED', updatedAt: new Date() },
+          });
+        }
+        const updatedF9 = await prisma.submission.findUnique({
+          where: { id },
+          include: { parties: true, approvals: true, documents: true, comments: true, specialApprovers: true },
+        });
+        return NextResponse.json({ success: true, data: updatedF9 });
+      }
+
+      // ── Form 9: Final approval stage ──────────────────────────────────────
+      if (isForm9 && isFinal) {
+        if (action === 'APPROVED') {
+          await prisma.submission.update({
+            where: { id },
+            data: {
+              status: 'PENDING_LEGAL_OFFICER',
+              loStage: 'F9_EXECUTION',
+              updatedAt: new Date(),
+            },
+          });
+        } else if (action === 'CANCELLED') {
+          await prisma.submission.update({
+            where: { id },
+            data: { status: 'CANCELLED', updatedAt: new Date() },
+          });
+        }
+        const updatedF9 = await prisma.submission.findUnique({
+          where: { id },
+          include: { parties: true, approvals: true, documents: true, comments: true, specialApprovers: true },
+        });
+        return NextResponse.json({ success: true, data: updatedF9 });
+      }
+
+      // ── Form 9: Initial review (OK to Proceed) ────────────────────────────
+      if (isForm9 && !isFinal) {
+        if (action === 'APPROVED') {
+          const targetAssignedOfficer = assignedOfficer || submission.assignedLegalOfficer || '';
+          await prisma.submission.update({
+            where: { id },
+            data: {
+              status: 'PENDING_LEGAL_OFFICER',
+              legalGmStage: 'INITIAL_REVIEW',
+              assignedLegalOfficer: targetAssignedOfficer,
+              loStage: 'F9_TITLE_VERIFICATION',
+              updatedAt: new Date(),
+            },
+          });
+        } else if (action === 'SENT_BACK') {
+          await prisma.submission.update({ where: { id }, data: { status: 'SENT_BACK', updatedAt: new Date() } });
+        } else if (action === 'CANCELLED') {
+          await prisma.submission.update({ where: { id }, data: { status: 'CANCELLED', updatedAt: new Date() } });
+        }
+        const updatedF9 = await prisma.submission.findUnique({
+          where: { id },
+          include: { parties: true, approvals: true, documents: true, comments: true, specialApprovers: true },
+        });
+        return NextResponse.json({ success: true, data: updatedF9 });
+      }
+
+      // ── All other forms ───────────────────────────────────────────────────
       if (action === 'APPROVED') {
         if (isFinal) {
           // FINAL_APPROVAL: optional special approvers before LO finalizes
@@ -129,6 +219,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
                 updatedAt: new Date(),
               },
             });
+          } else if (isForm7) {
+            await prisma.submission.update({
+              where: { id },
+              data: { status: 'PENDING_LEGAL_OFFICER', loStage: 'POST_GM_APPROVAL', updatedAt: new Date() },
+            });
           } else {
             // Form 2: after final GM approval → Legal Officer finalizes directly
             await prisma.submission.update({
@@ -142,10 +237,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           }
         } else {
           // Initial OK to Proceed — check for special approvers
+          const targetAssignedOfficer = assignedOfficer || submission.assignedLegalOfficer || '';
+          if (isForm7) {
+            await prisma.submission.update({
+              where: { id },
+              data: { status: 'PENDING_LEGAL_OFFICER', legalGmStage: 'INITIAL_REVIEW', assignedLegalOfficer: targetAssignedOfficer, loStage: 'INITIAL_REVIEW', updatedAt: new Date() },
+            });
+          } else {
           const gmSpecialApprovers: { email: string; name: string; dept: string }[] = body.specialApprovers || [];
           const targetLoStage = isForm3 ? 'ASSIGN_COURT_OFFICER' : 'INITIAL_REVIEW';
-          const targetAssignedOfficer = assignedOfficer || submission.assignedLegalOfficer || '';
-
           if (gmSpecialApprovers.length > 0) {
             // Cancel any existing pending special approvers
             await prisma.submissionSpecialApprover.updateMany({
@@ -187,6 +287,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               },
             });
           }
+          } // end non-Form7 initial branch
         }
       } else if (action === 'SENT_BACK') {
         await prisma.submission.update({ where: { id }, data: { status: 'SENT_BACK', updatedAt: new Date() } });
@@ -197,13 +298,112 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     // ── LEGAL OFFICER ──────────────────────────────────────────────────────
     if (role === 'LEGAL_OFFICER') {
+      // ── Form 9 specific LO actions (early return) ─────────────────────────
+      if (submission.formId === 9) {
+        if (action === 'F9_SUBMIT_TITLE_TO_GM') {
+          // LO submits title verification → LGM reviews
+          await prisma.submission.update({
+            where: { id },
+            data: {
+              status: 'PENDING_LEGAL_GM',
+              legalGmStage: 'F9_TITLE_REVIEW',
+              loStage: 'F9_PENDING_GM',
+              updatedAt: new Date(),
+            },
+          });
+        } else if (action === 'F9_SUBMIT_TO_FM') {
+          // LO submits to Facility Manager after reviewing all docs
+          const fmId = body.facilityManagerId || null;
+          await prisma.submission.update({
+            where: { id },
+            data: {
+              status: 'PENDING_FACILITY_MANAGER',
+              loStage: 'F9_PENDING_FM',
+              f9FacilityManagerId: fmId,
+              updatedAt: new Date(),
+            },
+          });
+        } else if (action === 'F9_SUBMIT_FINAL_TO_GM') {
+          // LO submits drafted deed to LGM for final approval
+          await prisma.submission.update({
+            where: { id },
+            data: {
+              status: 'PENDING_LEGAL_GM_FINAL',
+              legalGmStage: 'FINAL_APPROVAL',
+              loStage: 'F9_PENDING_FINAL_GM',
+              updatedAt: new Date(),
+            },
+          });
+        } else if (action === 'F9_JOB_COMPLETE') {
+          // LO finishes execution → CEO acknowledges physical document handover
+          await prisma.submission.update({
+            where: { id },
+            data: {
+              status: 'PENDING_CEO',
+              loStage: 'F9_DONE',
+              f9LegalReviewCompleted: true,
+              f9BoardResolutionNo:   body.f9BoardResolutionNo   || null,
+              f9BoardResolutionDate: body.f9BoardResolutionDate || null,
+              f9StampDutyOpinionNo:  body.f9StampDutyOpinionNo  || null,
+              f9StampDutyRs:         body.f9StampDutyRs         || null,
+              f9LegalFeeRs:          body.f9LegalFeeRs          || null,
+              f9ReferenceNo:         body.f9ReferenceNo         || null,
+              f9DeedNo:              body.f9DeedNo              || null,
+              f9DeedDate:            body.f9DeedDate            || null,
+              f9LandRegistryRegNo:   body.f9LandRegistryRegNo   || null,
+              f9DateHandoverFinance: body.f9DateHandoverFinance || null,
+              f9OfficialRemarks:     body.f9OfficialRemarks     || null,
+              updatedAt: new Date(),
+            },
+          });
+        } else if (action === 'F9_SAVE_OFFICIAL') {
+          // Partial save of official use fields (no status change)
+          await prisma.submission.update({
+            where: { id },
+            data: {
+              f9BoardResolutionNo:   body.f9BoardResolutionNo   || null,
+              f9BoardResolutionDate: body.f9BoardResolutionDate || null,
+              f9StampDutyOpinionNo:  body.f9StampDutyOpinionNo  || null,
+              f9StampDutyRs:         body.f9StampDutyRs         || null,
+              f9LegalFeeRs:          body.f9LegalFeeRs          || null,
+              f9ReferenceNo:         body.f9ReferenceNo         || null,
+              f9DeedNo:              body.f9DeedNo              || null,
+              f9DeedDate:            body.f9DeedDate            || null,
+              f9LandRegistryRegNo:   body.f9LandRegistryRegNo   || null,
+              f9DateHandoverFinance: body.f9DateHandoverFinance || null,
+              f9OfficialRemarks:     body.f9OfficialRemarks     || null,
+              updatedAt: new Date(),
+            },
+          });
+        } else if (action === 'F9_REQUEST_MORE_DOCS') {
+          // LO sends back to BUM for more documents
+          await prisma.submission.update({
+            where: { id },
+            data: { status: 'PENDING_BUM_DOCS', loStage: 'F9_REVIEW_DOCS', updatedAt: new Date() },
+          });
+        }
+        const updatedF9 = await prisma.submission.findUnique({
+          where: { id },
+          include: { parties: true, approvals: true, documents: true, comments: true, specialApprovers: true },
+        });
+        return NextResponse.json({ success: true, data: updatedF9 });
+      }
+
+      // ── All other forms LO actions ────────────────────────────────────────
       if (action === 'ASSIGN_COURT_OFFICER') {
+        if (!courtOfficerId) {
+          return NextResponse.json({ success: false, error: 'Court officer ID is required' }, { status: 400 });
+        }
+        const courtOfficerUser = await prisma.user.findUnique({ where: { id: courtOfficerId } });
+        if (!courtOfficerUser || courtOfficerUser.role !== 'COURT_OFFICER') {
+          return NextResponse.json({ success: false, error: 'Invalid court officer' }, { status: 400 });
+        }
         // Legal Officer assigns a Court Officer → status moves to PENDING_COURT_OFFICER
         await prisma.submission.update({
           where: { id },
           data: {
             status: 'PENDING_COURT_OFFICER',
-            courtOfficerId: courtOfficerId || null,
+            courtOfficerId,
             loStage: 'PENDING_COURT_OFFICER',
             updatedAt: new Date(),
           },
@@ -220,10 +420,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           },
         });
       } else if (action === 'ASSIGN_SPECIAL_APPROVER') {
+        if (!specialApproverEmail) {
+          return NextResponse.json({ success: false, error: 'Special approver email is required' }, { status: 400 });
+        }
         await prisma.submissionSpecialApprover.create({
           data: {
             submissionId: id,
-            approverEmail: specialApproverEmail || '',
+            approverEmail: specialApproverEmail,
             approverName: specialApproverName || '',
             department: 'Special Approver',
             assignedBy: 'LEGAL_OFFICER',
@@ -286,10 +489,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           },
         });
       } else if (action === 'ASSIGN_SPECIAL_APPROVER') {
+        if (!specialApproverEmail) {
+          return NextResponse.json({ success: false, error: 'Special approver email is required' }, { status: 400 });
+        }
         await prisma.submissionSpecialApprover.create({
           data: {
             submissionId: id,
-            approverEmail: specialApproverEmail || '',
+            approverEmail: specialApproverEmail,
             approverName: specialApproverName || '',
             department: 'Special Approver',
             assignedBy: 'COURT_OFFICER',
@@ -370,6 +576,107 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
     }
 
+    // ── FORM 9: BUM CONFIRM ────────────────────────────────────────────────
+    if (role === 'BUM_F9_CONFIRM') {
+      if (action === 'PROCEED') {
+        await prisma.submission.update({
+          where: { id },
+          data: { status: 'PENDING_CLUSTER_DIRECTOR', updatedAt: new Date() },
+        });
+      } else if (action === 'CANCELLED') {
+        await prisma.submission.update({
+          where: { id },
+          data: { status: 'CANCELLED', updatedAt: new Date() },
+        });
+      }
+    }
+
+    // ── FORM 9: CLUSTER DIRECTOR ───────────────────────────────────────────
+    if (role === 'CLUSTER_DIRECTOR') {
+      if (action === 'APPROVED') {
+        await prisma.submission.update({
+          where: { id },
+          data: { status: 'PENDING_GMC', updatedAt: new Date() },
+        });
+      } else if (action === 'CANCELLED') {
+        await prisma.submission.update({
+          where: { id },
+          data: { status: 'CANCELLED', updatedAt: new Date() },
+        });
+      }
+    }
+
+    // ── FORM 9: GMC ────────────────────────────────────────────────────────
+    if (role === 'GMC_MEMBER') {
+      if (action === 'APPROVED') {
+        // Auto-add extra documents based on property owner type
+        const ownerType = submission.f9PropertyOwnerType || 'Individual';
+        const extraDocs = getF9ExtraDocs(ownerType);
+        for (const label of extraDocs) {
+          const exists = await prisma.submissionDocument.findFirst({
+            where: { submissionId: id, label },
+          });
+          if (!exists) {
+            await prisma.submissionDocument.create({
+              data: { submissionId: id, label, type: 'required', status: 'NONE' },
+            });
+          }
+        }
+        await prisma.submission.update({
+          where: { id },
+          data: { status: 'PENDING_BUM_DOCS', updatedAt: new Date() },
+        });
+      } else if (action === 'CANCELLED') {
+        await prisma.submission.update({
+          where: { id },
+          data: { status: 'CANCELLED', updatedAt: new Date() },
+        });
+      }
+    }
+
+    // ── FORM 9: BUM DOCS SUBMIT ────────────────────────────────────────────
+    if (role === 'BUM_F9_DOCS') {
+      if (action === 'SUBMITTED') {
+        await prisma.submission.update({
+          where: { id },
+          data: {
+            status: 'PENDING_LEGAL_OFFICER',
+            loStage: 'F9_REVIEW_DOCS',
+            updatedAt: new Date(),
+          },
+        });
+      }
+    }
+
+    // ── FORM 9: FACILITY MANAGER ───────────────────────────────────────────
+    if (role === 'FACILITY_MANAGER') {
+      if (action === 'APPROVED') {
+        await prisma.submission.update({
+          where: { id },
+          data: {
+            status: 'PENDING_LEGAL_OFFICER',
+            loStage: 'F9_FINALIZATION',
+            updatedAt: new Date(),
+          },
+        });
+      } else if (action === 'CANCELLED') {
+        await prisma.submission.update({
+          where: { id },
+          data: { status: 'CANCELLED', updatedAt: new Date() },
+        });
+      }
+    }
+
+    // ── FORM 9: CEO ACKNOWLEDGE ────────────────────────────────────────────
+    if (role === 'CEO_F9') {
+      if (action === 'ACKNOWLEDGED') {
+        await prisma.submission.update({
+          where: { id },
+          data: { status: 'COMPLETED', updatedAt: new Date() },
+        });
+      }
+    }
+
     const updated = await prisma.submission.findUnique({
       where: { id },
       include: { parties: true, approvals: true, documents: true, comments: true, specialApprovers: true },
@@ -379,4 +686,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     console.error('Approve error:', error);
     return NextResponse.json({ success: false, error: 'Failed to process approval' }, { status: 500 });
   }
+}
+
+// ── Helper: Form 9 extra docs by owner type ────────────────────────────────
+function getF9ExtraDocs(ownerType: string): string[] {
+  if (ownerType === 'Company') {
+    return [
+      'Articles of Association',
+      'Board Resolution',
+      'Certificate of Incorporation',
+      'Form 1 and or Latest Form 20',
+      'Copy of the Utility Bills (Water and Electricity)',
+      'Bank Details of the landlord',
+    ];
+  }
+  if (ownerType === 'Partnership') {
+    return [
+      'Partnership Registration Certificate',
+      'NIC / Passport copies of every partner',
+      'Copy of the Utility Bills (Water and Electricity)',
+      'Bank Details of the landlord',
+    ];
+  }
+  // Individual (default)
+  return [
+    'Copy of the National Identity Card of the Landlord',
+    'Copy of the Passport (if dual Citizen)',
+    'Business Registration Certificate',
+    'Copy of the Utility Bills (Water and Electricity)',
+    'Bank Details of the landlord',
+  ];
 }

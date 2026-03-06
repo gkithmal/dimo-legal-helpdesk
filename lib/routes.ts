@@ -14,7 +14,18 @@ export const ROUTES = {
     LEGAL_OFFICER_REASSIGNED: '/form1/legal-officer?stage=REASSIGNED',
     LEGAL_OFFICER_ACTIVE: '/form1/legal-officer?stage=ACTIVE',
     LEGAL_OFFICER_POST: '/form1/legal-officer?stage=POST_GM_APPROVAL',
-    SPECIAL_APPROVER: '/special-approver-home',
+    SPECIAL_APPROVER: '/form1/special-approver',
+  },
+  FORM2: {
+    INITIATOR: '/form2',
+    APPROVAL: '/form2/approval',
+    CEO: '/form2/ceo',
+    LEGAL_GM_INITIAL: '/form2/legal-gm?stage=INITIAL_REVIEW',
+    LEGAL_GM_FINAL: '/form2/legal-gm?stage=FINAL_APPROVAL',
+    LEGAL_OFFICER_PENDING: '/form2/legal-officer?stage=PENDING_GM',
+    LEGAL_OFFICER_ACTIVE: '/form2/legal-officer?stage=ACTIVE',
+    LEGAL_OFFICER_POST: '/form2/legal-officer?stage=POST_GM_APPROVAL',
+    SPECIAL_APPROVER: '/form2/special-approver',
   },
   FORM3: {
     INITIATOR: '/form3',
@@ -22,6 +33,7 @@ export const ROUTES = {
     LEGAL_GM: '/form3/legal-gm',
     LEGAL_OFFICER: '/form3/legal-officer',
     COURT_OFFICER: '/form3/court-officer',
+    SPECIAL_APPROVER: '/form3/special-approver',
   },
   FORM4: {
     INITIATOR: '/form4',
@@ -31,9 +43,45 @@ export const ROUTES = {
     LEGAL_OFFICER_PENDING: '/form4/legal-officer?stage=PENDING_GM',
     LEGAL_OFFICER_ACTIVE: '/form4/legal-officer?stage=ACTIVE',
     LEGAL_OFFICER_POST: '/form4/legal-officer?stage=POST_GM_APPROVAL',
-    SPECIAL_APPROVER: '/special-approver-home',
+    SPECIAL_APPROVER: '/form4/special-approver',
+  },
+  FORM6: {
+    INITIATOR: '/form6',
+    APPROVAL: '/form6/approval',
+    LEGAL_GM_INITIAL: '/form6/legal-gm?stage=INITIAL_REVIEW',
+    LEGAL_GM_FINAL: '/form6/legal-gm?stage=FINAL_APPROVAL',
+    LEGAL_OFFICER_PENDING: '/form6/legal-officer?stage=PENDING_GM',
+    LEGAL_OFFICER_ACTIVE: '/form6/legal-officer?stage=ACTIVE',
+    LEGAL_OFFICER_POST: '/form6/legal-officer?stage=POST_GM_APPROVAL',
+    SPECIAL_APPROVER: '/form6/special-approver',
+  },
+  FORM7: {
+    INITIATOR: '/form7',
+    APPROVAL: '/form7/approval',
+    LEGAL_GM_INITIAL: '/form7/legal-gm?stage=INITIAL_REVIEW',
+    LEGAL_GM_FINAL: '/form7/legal-gm?stage=FINAL_APPROVAL',
+    LEGAL_OFFICER: '/form7/legal-officer',
+    SPECIAL_APPROVER: '/form7/special-approver',
+  },
+  FORM10: {
+    INITIATOR: '/form10',
+    APPROVAL: '/form10/approval',
+    LEGAL_GM: '/form10/legal-gm',
+    LEGAL_OFFICER: '/form10/legal-officer',
+    COURT_OFFICER: '/form10/court-officer',
+    SPECIAL_APPROVER: '/form10/special-approver',
+  },
+  FORM9: {
+    INITIATOR: '/form9',
+    LEGAL_GM: '/form9/legal-gm',
+    LEGAL_OFFICER: '/form9/legal-officer',
+    CLUSTER_DIRECTOR: '/form9/cluster-director',
+    GMC: '/form9/gmc',
+    FACILITY_MANAGER: '/form9/facility-manager',
+    CEO: '/form9/ceo',
   },
 } as const;
+
 export function getHomeRoute(role: string): string {
   if (role === 'LEGAL_GM') return ROUTES.LEGAL_GM_HOME;
   if (role === 'FINANCE') return ROUTES.FINANCE;

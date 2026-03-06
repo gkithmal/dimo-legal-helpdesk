@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type UserRole = 'INITIATOR' | 'BUM' | 'FBP' | 'CLUSTER_HEAD' | 'LEGAL_GM' | 'LEGAL_OFFICER' | 'CEO' | 'COURT_OFFICER' | 'SPECIAL_APPROVER';
+type UserRole = 'INITIATOR' | 'BUM' | 'FBP' | 'CLUSTER_HEAD' | 'CLUSTER_DIRECTOR' | 'GMC_MEMBER' | 'FACILITY_MANAGER' | 'LEGAL_GM' | 'LEGAL_OFFICER' | 'CEO' | 'COURT_OFFICER' | 'SPECIAL_APPROVER' | 'GENERAL_MANAGER';
 type ApprovalFilter = 'PENDING' | 'APPROVED' | 'MY_REJECTIONS' | 'OTHER_REJECTIONS' | 'ALL';
 type SubmissionFilter = 'ALL' | 'APPROVAL_PENDING' | 'ONGOING' | 'COMPLETED' | 'RESUBMIT' | 'CANCELLED' | 'DRAFT' | 'RESUBMITTED';
 
@@ -18,6 +18,9 @@ const DB_TO_SUBMISSION: Record<string, SubmissionFilter> = {
   DRAFT: 'DRAFT', PENDING_APPROVAL: 'APPROVAL_PENDING',
   PENDING_LEGAL_GM: 'ONGOING', PENDING_LEGAL_OFFICER: 'ONGOING',
   PENDING_LEGAL_GM_FINAL: 'ONGOING', PENDING_SPECIAL_APPROVER: 'ONGOING',
+  PENDING_BUM_CONFIRM: 'ONGOING', PENDING_CLUSTER_DIRECTOR: 'ONGOING',
+  PENDING_GMC: 'ONGOING', PENDING_BUM_DOCS: 'ONGOING',
+  PENDING_FACILITY_MANAGER: 'ONGOING', PENDING_CEO: 'ONGOING',
   COMPLETED: 'COMPLETED', SENT_BACK: 'RESUBMIT', CANCELLED: 'CANCELLED', RESUBMITTED: 'RESUBMITTED',
 };
 
@@ -73,7 +76,9 @@ function formatDate(iso: string) {
 function getRoleLabel(role: UserRole): string {
   const map: Record<UserRole, string> = {
     INITIATOR: 'Initiator', BUM: 'BUM', FBP: 'FBP',
-    CLUSTER_HEAD: 'Cluster Head', LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer', CEO: 'CEO', COURT_OFFICER: 'Court Officer', SPECIAL_APPROVER: 'Special Approver',
+    CLUSTER_HEAD: 'Cluster Head', CLUSTER_DIRECTOR: 'Cluster Director',
+    GMC_MEMBER: 'GMC Member', FACILITY_MANAGER: 'Facility Manager',
+    LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer', CEO: 'CEO', COURT_OFFICER: 'Court Officer', SPECIAL_APPROVER: 'Special Approver', GENERAL_MANAGER: 'General Manager',
   };
   return map[role];
 }
@@ -385,6 +390,14 @@ export default function HomePage() {
               return all.filter((s: any) => s.fbpId === currentUserId && s.status !== 'RESUBMITTED');
             if (currentRole === 'CLUSTER_HEAD')
               return all.filter((s: any) => s.clusterHeadId === currentUserId && s.status !== 'RESUBMITTED');
+            if (currentRole === 'CLUSTER_DIRECTOR')
+              return all.filter((s: any) => s.f9ClusterDirectorId === currentUserId && s.formId === 9 && s.status !== 'RESUBMITTED');
+            if (currentRole === 'GMC_MEMBER')
+              return all.filter((s: any) => s.f9GMCMemberId === currentUserId && s.formId === 9 && s.status !== 'RESUBMITTED');
+            if (currentRole === 'FACILITY_MANAGER')
+              return all.filter((s: any) => s.formId === 9 && ['PENDING_FACILITY_MANAGER', 'COMPLETED', 'CANCELLED'].includes(s.status) && s.status !== 'RESUBMITTED');
+            if (currentRole === 'GENERAL_MANAGER')
+              return all.filter((s: any) => s.formId === 7 && s.approvals?.some((a: any) => a.role === 'GENERAL_MANAGER') && s.status !== 'RESUBMITTED');
             if (currentRole === 'LEGAL_GM')
               return all.filter((s: any) => !['PENDING_APPROVAL', 'PENDING_CEO', 'DRAFT', 'RESUBMITTED'].includes(s.status));
             if (currentRole === 'LEGAL_OFFICER')
@@ -422,12 +435,16 @@ export default function HomePage() {
                 else                                            status = 'APPROVED';
               }
               const route =
-                currentRole === 'LEGAL_OFFICER'   ? `/form${s.formId}/legal-officer?id=${s.id}` :
-                currentRole === 'COURT_OFFICER'   ? `/form${s.formId}/court-officer?id=${s.id}` :
-                currentRole === 'SPECIAL_APPROVER'? `/form${s.formId}/special-approver?id=${s.id}` :
-                currentRole === 'LEGAL_GM'        ? `/form${s.formId}/legal-gm?id=${s.id}` :
-                currentRole === 'CEO'             ? `/form${s.formId}/ceo?id=${s.id}` :
-                                                    `/form${s.formId}/approval?id=${s.id}`;
+                currentRole === 'LEGAL_OFFICER'    ? `/form${s.formId}/legal-officer?id=${s.id}` :
+                currentRole === 'COURT_OFFICER'    ? `/form${s.formId}/court-officer?id=${s.id}` :
+                currentRole === 'SPECIAL_APPROVER' ? `/form${s.formId}/special-approver?id=${s.id}` :
+                currentRole === 'LEGAL_GM'         ? `/form${s.formId}/legal-gm?id=${s.id}` :
+                currentRole === 'CEO'              ? `/form${s.formId}/ceo?id=${s.id}` :
+                currentRole === 'GENERAL_MANAGER'  ? `/form${s.formId}/approval?id=${s.id}` :
+                currentRole === 'CLUSTER_DIRECTOR' ? `/form9/cluster-director?id=${s.id}` :
+                currentRole === 'GMC_MEMBER'       ? `/form9/gmc?id=${s.id}` :
+                currentRole === 'FACILITY_MANAGER' ? `/form9/facility-manager?id=${s.id}` :
+                                                     `/form${s.formId}/approval?id=${s.id}`;
               return {
                 id: s.id, requestNo: s.submissionNo, formTitle: s.formName,
                 formType: `FORM ${s.formId}`, submittedBy: s.initiatorName || s.initiatorId,
@@ -437,20 +454,28 @@ export default function HomePage() {
           );
 
           const needsAction = (s: any): boolean => {
-            if (currentRole === 'BUM' || currentRole === 'FBP' || currentRole === 'CLUSTER_HEAD')
+            if (currentRole === 'BUM') {
+              if (s.formId === 9) return ['PENDING_BUM_CONFIRM', 'PENDING_BUM_DOCS'].includes(s.status);
+              return s.status === 'PENDING_APPROVAL' && s.approvals?.some((a: any) => a.role === 'BUM' && a.status === 'PENDING');
+            }
+            if (currentRole === 'FBP' || currentRole === 'CLUSTER_HEAD')
               return s.status === 'PENDING_APPROVAL' && s.approvals?.some((a: any) => a.role === currentRole && a.status === 'PENDING');
+            if (currentRole === 'GENERAL_MANAGER') return s.status === 'PENDING_APPROVAL' && s.approvals?.some((a: any) => a.role === 'GENERAL_MANAGER' && a.status === 'PENDING');
             if (currentRole === 'CEO')           return s.status === 'PENDING_CEO';
             if (currentRole === 'LEGAL_GM')      return ['PENDING_LEGAL_GM', 'PENDING_LEGAL_GM_FINAL'].includes(s.status);
-            if (currentRole === 'LEGAL_OFFICER') return s.status === 'PENDING_LEGAL_OFFICER' || s.loStage === 'FINALIZATION';
+            if (currentRole === 'LEGAL_OFFICER') return s.status === 'PENDING_LEGAL_OFFICER' || s.loStage === 'FINALIZATION' || s.loStage === 'F9_EXECUTION';
             if (currentRole === 'COURT_OFFICER') return s.status === 'PENDING_COURT_OFFICER';
             if (currentRole === 'SPECIAL_APPROVER') return s.status === 'PENDING_SPECIAL_APPROVER';
+            if (currentRole === 'CLUSTER_DIRECTOR') return s.status === 'PENDING_CLUSTER_DIRECTOR';
+            if (currentRole === 'GMC_MEMBER') return s.status === 'PENDING_GMC';
+            if (currentRole === 'FACILITY_MANAGER') return s.status === 'PENDING_FACILITY_MANAGER';
             return false;
           };
 
           // CEO only sees PENDING_CEO in My Workflows (after action it disappears from here)
           const workflowSubmissions = currentRole === 'CEO'
             ? mySubmissions.filter((s: any) => needsAction(s))
-            : ['LEGAL_OFFICER','LEGAL_GM','COURT_OFFICER','SPECIAL_APPROVER','BUM','FBP','CLUSTER_HEAD'].includes(currentRole)
+            : ['LEGAL_OFFICER','LEGAL_GM','COURT_OFFICER','SPECIAL_APPROVER','BUM','FBP','CLUSTER_HEAD','CLUSTER_DIRECTOR','GMC_MEMBER','FACILITY_MANAGER'].includes(currentRole)
             ? mySubmissions
             : mySubmissions.filter((s: any) => needsAction(s));
 
@@ -463,12 +488,16 @@ export default function HomePage() {
               dueDate: s.dueDate ? formatDate(s.dueDate) : formatDate(s.createdAt),
               isOverdue: needsAction(s) && s.dueDate ? new Date() > new Date(s.dueDate) : false,
               route:
-                currentRole === 'LEGAL_OFFICER'   ? `/form${s.formId}/legal-officer?id=${s.id}` :
-                currentRole === 'COURT_OFFICER'   ? `/form${s.formId}/court-officer?id=${s.id}` :
-                currentRole === 'SPECIAL_APPROVER'? `/form${s.formId}/special-approver?id=${s.id}` :
-                currentRole === 'LEGAL_GM'        ? `/form${s.formId}/legal-gm?id=${s.id}` :
-                currentRole === 'CEO'             ? `/form${s.formId}/ceo?id=${s.id}` :
-                                                    `/form${s.formId}/approval?id=${s.id}`,
+                currentRole === 'LEGAL_OFFICER'    ? `/form${s.formId}/legal-officer?id=${s.id}` :
+                currentRole === 'COURT_OFFICER'    ? `/form${s.formId}/court-officer?id=${s.id}` :
+                currentRole === 'SPECIAL_APPROVER' ? `/form${s.formId}/special-approver?id=${s.id}` :
+                currentRole === 'LEGAL_GM'         ? `/form${s.formId}/legal-gm?id=${s.id}` :
+                currentRole === 'CEO'              ? `/form${s.formId}/ceo?id=${s.id}` :
+                currentRole === 'GENERAL_MANAGER'  ? `/form${s.formId}/approval?id=${s.id}` :
+                currentRole === 'CLUSTER_DIRECTOR' ? `/form9/cluster-director?id=${s.id}` :
+                currentRole === 'GMC_MEMBER'       ? `/form9/gmc?id=${s.id}` :
+                currentRole === 'FACILITY_MANAGER' ? `/form9/facility-manager?id=${s.id}` :
+                                                     `/form${s.formId}/approval?id=${s.id}`,
             }))
           );
 
@@ -496,7 +525,7 @@ export default function HomePage() {
 
   // ── Early returns AFTER all hooks ──
   if (status === 'loading') return null;
-  if (status === 'authenticated' && !['INITIATOR', 'BUM', 'FBP', 'CLUSTER_HEAD', 'LEGAL_GM', 'LEGAL_OFFICER', 'CEO', 'COURT_OFFICER', 'FINANCE'].includes(session?.user?.role as string)) {
+  if (status === 'authenticated' && !['INITIATOR', 'BUM', 'FBP', 'CLUSTER_HEAD', 'CLUSTER_DIRECTOR', 'GMC_MEMBER', 'FACILITY_MANAGER', 'LEGAL_GM', 'LEGAL_OFFICER', 'CEO', 'COURT_OFFICER', 'FINANCE', 'GENERAL_MANAGER'].includes(session?.user?.role as string)) {
     router.replace('/');
     return null;
   }

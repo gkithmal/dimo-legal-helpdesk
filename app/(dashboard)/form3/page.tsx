@@ -428,6 +428,7 @@ function Form3PageContent() {
   const [showSignOut, setShowSignOut] = useState(false);
   const [submissionNo, setSubmissionNo] = useState('');
   const [submissionStatus, setSubmissionStatus] = useState('');
+  const [loStageValue, setLoStageValue] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -508,6 +509,7 @@ function Form3PageContent() {
       const s = d.data;
       setSubmissionNo(s.submissionNo);
       setSubmissionStatus(s.status||'');
+      setLoStageValue(s.loStage||'');
       // Parse meta from scopeOfAgreement
       let meta: Record<string,any> = {};
       try { meta = JSON.parse(s.scopeOfAgreement||'{}'); } catch {}
@@ -667,15 +669,25 @@ function Form3PageContent() {
   const addFilesToDoc = (key: string, files: AttachedFile[]) => setDocFiles(prev => { const n={...prev,[key]:[...(prev[key]||[]),...files]}; docFilesRef.current=n; return n; });
   const removeFileFromDoc = (key: string, id: string) => setDocFiles(prev => ({...prev,[key]:(prev[key]||[]).filter(f=>f.id!==id)}));
 
-  const canUploadDocs = !isReadOnly || ['PENDING_APPROVAL','SENT_BACK','DRAFT'].includes(submissionStatus);
+  const isTerminalStatus = ['COMPLETED', 'CANCELLED'].includes(submissionStatus);
+  const canUploadDocs = !isTerminalStatus;
+  const canRemoveDocs = !isReadOnly;
 
-  const statusToStep: Record<string,number> = {
-    DRAFT:0, PENDING_APPROVAL:1, PENDING_LEGAL_GM:2,
-    PENDING_LEGAL_OFFICER:3, PENDING_COURT_OFFICER:3,
-    PENDING_SPECIAL_APPROVER:3, PENDING_LEGAL_GM_FINAL:4,
-    COMPLETED:5, CANCELLED:5, SENT_BACK:1,
-  };
-  const currentStep = mode==='view' ? (statusToStep[submissionStatus]??1) : 0;
+  const currentStep = (() => {
+    if (mode !== 'view') return 0;
+    const loStage = loStageValue;
+    if (submissionStatus === 'DRAFT') return 0;
+    if (submissionStatus === 'PENDING_APPROVAL' || submissionStatus === 'SENT_BACK') return 1;
+    if (submissionStatus === 'PENDING_LEGAL_GM') return 2;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'ACTIVE' || loStage === 'INITIAL_REVIEW' || loStage === 'ASSIGN_COURT_OFFICER')) return 3;
+    if (submissionStatus === 'PENDING_COURT_OFFICER') return 3;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER' && (loStage === 'FINALIZATION' || loStage === 'POST_GM_APPROVAL')) return 4;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 3;
+    if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 4;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
+    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 5;
+    return 1;
+  })();
 
   return (
     <div className="min-h-screen flex bg-[#f0f4f9]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -1037,7 +1049,7 @@ function Form3PageContent() {
       {uploadPopup && (
         <UploadPopup docLabel={uploadPopup.docLabel} files={docFiles[uploadPopup.docKey]||[]}
           onAdd={files=>addFilesToDoc(uploadPopup.docKey,files)} onRemove={id=>removeFileFromDoc(uploadPopup.docKey,id)}
-          canRemove={canUploadDocs} onClose={()=>setUploadPopup(null)}
+          canRemove={canRemoveDocs} onClose={()=>setUploadPopup(null)}
           onConfirm={async()=>{
             const files = docFiles[uploadPopup.docKey]||[];
             const newFiles = files.filter(f=>!f.fileUrl&&f.file);

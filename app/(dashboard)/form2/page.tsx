@@ -84,12 +84,6 @@ const FORM2_DOCS_ALL: { label: string; types: string[]; mandatory?: boolean }[] 
   { label: "Other (Individual)",                                                                           types: ["Individual"] },
 ];
 
-const STATUS_TO_STEP: Record<string, number> = {
-  DRAFT: 0, PENDING_APPROVAL: 1, PENDING_CEO: 2,
-  PENDING_LEGAL_GM: 3, PENDING_LEGAL_OFFICER: 4,
-  PENDING_LEGAL_GM_FINAL: 5, COMPLETED: 6,
-  CANCELLED: 1, SENT_BACK: 1,
-};
 
 // ─── Field Components ─────────────────────────────────────────────────────────
 
@@ -345,6 +339,7 @@ function Form2PageContent() {
   const [submissionNo, setSubmissionNo] = useState("");
   useEffect(() => { setSubmissionNo(generateSubmissionId()); }, []);
   const [submissionStatus, setSubmissionStatus] = useState('');
+  const [loStageValue, setLoStageValue] = useState('');
   const [comments, setComments] = useState<CommentEntry[]>([]);
   const [commentInput, setCommentInput] = useState('');
   const [showInstructions, setShowInstructions] = useState(false);
@@ -444,6 +439,7 @@ function Form2PageContent() {
         if (!s) return;
         setSubmissionNo(s.submissionNo || '');
         setSubmissionStatus(s.status || '');
+        setLoStageValue(s.loStage || '');
         try {
           const meta = JSON.parse(s.scopeOfAgreement || '{}');
           setContactNo(meta.contactNo || '');
@@ -648,7 +644,21 @@ function Form2PageContent() {
   const removeFileFromDoc = (docKey: string, fileId: string) =>
     setDocFiles(prev => ({ ...prev, [docKey]: (prev[docKey] || []).filter(f => f.id !== fileId) }));
 
-  const currentStep = mode === 'view' ? (STATUS_TO_STEP[submissionStatus] ?? 1) : 0;
+  const currentStep = (() => {
+    if (mode !== 'view') return 0;
+    const loStage = loStageValue;
+    if (submissionStatus === 'DRAFT') return 0;
+    if (submissionStatus === 'PENDING_APPROVAL' || submissionStatus === 'SENT_BACK') return 1;
+    if (submissionStatus === 'PENDING_CEO') return 2;
+    if (submissionStatus === 'PENDING_LEGAL_GM') return 3;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'ACTIVE' || loStage === 'INITIAL_REVIEW')) return 4;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER' && (loStage === 'FINALIZATION' || loStage === 'POST_GM_APPROVAL')) return 5;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 4;
+    if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 5;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 6;
+    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 6;
+    return 1;
+  })();
   // In view mode (submitted): can ADD files but NOT remove existing ones
   // In resubmit/new/draft: full control — add and remove
   const isTerminalStatus = ['COMPLETED', 'CANCELLED'].includes(submissionStatus);
@@ -1076,17 +1086,21 @@ function Form2PageContent() {
               <span className="text-[11px] font-bold uppercase tracking-widest text-[#17293E]">Approvals</span>
             </div>
             <div className="p-4 space-y-3.5">
-              {[
-                { label: 'BUM', value: bum, set: setBum, options: bumOptions, key: 'bum' },
-                { label: 'FBP', value: fbp, set: setFbp, options: fbpOptions, key: 'fbp' },
-                { label: 'Cluster Head', value: clusterHead, set: setClusterHead, options: clusterOptions, key: 'cluster head' },
-              ].map(({ label, value, set, options, key }) => (
-                <div key={label}>
-                  <FieldLabel required>{label}</FieldLabel>
-                  <SelectField value={value} onChange={set} options={options} placeholder={`Select ${label}...`} disabled={isReadOnly} hasError={hasError(key)} />
-                  <FieldError message={hasError(key) ? `${label} is required` : undefined} />
-                </div>
-              ))}
+              <div>
+                <FieldLabel required>BUM</FieldLabel>
+                <SelectField value={bum} onChange={setBum} options={bumOptions} placeholder="Select BUM..." disabled={isReadOnly} hasError={hasError('bum')} />
+                <FieldError message={hasError('bum') ? 'BUM is required' : undefined} />
+              </div>
+              <div>
+                <FieldLabel required>FBP</FieldLabel>
+                <SelectField value={fbp} onChange={setFbp} options={fbpOptions} placeholder="Select FBP..." disabled={isReadOnly} hasError={hasError('fbp')} />
+                <FieldError message={hasError('fbp') ? 'FBP is required' : undefined} />
+              </div>
+              <div>
+                <FieldLabel required>Cluster Head</FieldLabel>
+                <ComboBox value={clusterHead} onChange={setClusterHead} options={clusterOptions} placeholder="Type or select Cluster Head..." disabled={isReadOnly} hasError={hasError('cluster head')} dropUp />
+                <FieldError message={hasError('cluster head') ? 'Cluster Head is required' : undefined} />
+              </div>
               {/* CEO note */}
               <div className="mt-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200">
                 <p className="text-[11px] text-amber-700 font-semibold">CEO approval required</p>

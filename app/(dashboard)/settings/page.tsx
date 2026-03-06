@@ -78,7 +78,7 @@ function LegalStaffTab() {
   const loadUsers=useCallback(async()=>{
     setLoadingStaff(true);setApiError('');
     try{
-      const res=await fetch('/api/users?includeInactive=true');const data=await res.json();
+      const res=await fetch('/api/users?includeInactive=true&notRole=INITIATOR');const data=await res.json();
       if(!res.ok||!data.success)throw new Error(data.error||'Failed to load users');
       const mapped:StaffMember[]=data.data.map((u:{id:string;name:string;email:string;role:string;formIds?:number[];isActive?:boolean})=>({id:u.id,name:u.name,email:u.email,role:(u.role as Role)||'',forms:u.formIds||[],isActive:u.isActive!==false}));
       setStaff(mapped);

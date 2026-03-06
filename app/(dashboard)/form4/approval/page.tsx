@@ -33,6 +33,7 @@ type Submission = {
   id: string;
   submissionNo: string;
   status: string;
+  loStage?: string;
   companyCode: string;
   title: string;
   sapCostCenter: string;
@@ -656,38 +657,44 @@ function Form4ApprovalPageContent() {
                 <p className="text-[#1A438A] font-bold text-sm font-mono">{submission.submissionNo}</p>
               </div>
             </div>
-            <div className="relative flex justify-between items-start">
-              <div className="absolute top-[9px] left-[9px] right-[9px] h-px bg-slate-200" />
-              {WORKFLOW_STEPS.map((step, i) => {
-                const isApprovalStep = i === 1;
-                const dotColor = isApprovalStep ? approvalStepColor : i === 0 ? '#1A438A' : '#cbd5e1';
-                // Map DB status to active step index
-                const statusToStep: Record<string, number> = {
-                  PENDING_APPROVAL:       1,
-                  PENDING_LEGAL_GM:         2,
-                  PENDING_LEGAL_OFFICER:    3,
-                  PENDING_SPECIAL_APPROVER: 3,
-                  PENDING_LEGAL_GM_FINAL:   4,
-                  COMPLETED:                5,
-                  SENT_BACK:                1,
-                  CANCELLED:                1,
-                };
-                const activeStep = statusToStep[submission?.status ?? ''] ?? 1;
-                const isActive = i <= activeStep;
-                return (
-                  <div key={i} className="relative flex flex-col items-center z-10" style={{ width: `${100 / WORKFLOW_STEPS.length}%` }}>
-                    <div className="w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all shadow-sm"
-                      style={{ background: isActive ? dotColor : 'white', borderColor: isActive ? dotColor : '#cbd5e1', boxShadow: isApprovalStep ? `0 0 0 4px ${approvalStepColor}25` : undefined }}>
-                      {i === 0 && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
-                      {isApprovalStep && overallStatus === 'APPROVED' && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
-                      {isApprovalStep && overallStatus === 'REJECTED' && <XCircle className="w-2.5 h-2.5 text-white" />}
-                      {isApprovalStep && overallStatus === 'PENDING'  && <div className="w-2 h-2 rounded-full bg-white" />}
-                    </div>
-                    <p className="text-[9px] text-center leading-tight whitespace-pre-line mt-1.5 text-slate-500 font-medium px-0.5">{step.label}</p>
-                  </div>
-                );
-              })}
-            </div>
+            {(() => {
+              const rawLoStage = submission?.loStage || '';
+              const activeStep = (() => {
+                const status = submission?.status || '';
+                if (status === 'DRAFT') return 0;
+                if (status === 'PENDING_APPROVAL' || status === 'SENT_BACK') return 1;
+                if (status === 'PENDING_LEGAL_GM') return 2;
+                if (status === 'PENDING_LEGAL_OFFICER' && (rawLoStage === 'ACTIVE' || rawLoStage === 'INITIAL_REVIEW' || rawLoStage === 'ASSIGN_COURT_OFFICER')) return 3;
+                if (status === 'PENDING_SPECIAL_APPROVER' && (rawLoStage === 'FINALIZATION' || rawLoStage === 'POST_GM_APPROVAL')) return 4;
+                if (status === 'PENDING_SPECIAL_APPROVER') return 3;
+                if (status === 'PENDING_LEGAL_GM_FINAL') return 4;
+                if (status === 'PENDING_LEGAL_OFFICER' && (rawLoStage === 'POST_GM_APPROVAL' || rawLoStage === 'FINALIZATION')) return 5;
+                if (status === 'COMPLETED' || status === 'CANCELLED') return 5;
+                return 1;
+              })();
+              return (
+                <div className="relative flex justify-between items-start">
+                  <div className="absolute top-[9px] left-[9px] right-[9px] h-px bg-slate-200" />
+                  {WORKFLOW_STEPS.map((step, i) => {
+                    const isApprovalStep = i === 1;
+                    const dotColor = isApprovalStep ? approvalStepColor : i === 0 ? '#1A438A' : '#cbd5e1';
+                    const isActive = i <= activeStep;
+                    return (
+                      <div key={i} className="relative flex flex-col items-center z-10" style={{ width: `${100 / WORKFLOW_STEPS.length}%` }}>
+                        <div className="w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all shadow-sm"
+                          style={{ background: isActive ? dotColor : 'white', borderColor: isActive ? dotColor : '#cbd5e1', boxShadow: isApprovalStep ? `0 0 0 4px ${approvalStepColor}25` : undefined }}>
+                          {i === 0 && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                          {isApprovalStep && overallStatus === 'APPROVED' && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                          {isApprovalStep && overallStatus === 'REJECTED' && <XCircle className="w-2.5 h-2.5 text-white" />}
+                          {isApprovalStep && overallStatus === 'PENDING'  && <div className="w-2 h-2 rounded-full bg-white" />}
+                        </div>
+                        <p className="text-[9px] text-center leading-tight whitespace-pre-line mt-1.5 text-slate-500 font-medium px-0.5">{step.label}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Required Documents */}

@@ -24,6 +24,9 @@ async function main() {
     { email: 'special.approver@testdimo.com', name: 'Special Approver',        role: 'SPECIAL_APPROVER', department: 'Legal' },
     { email: 'finance.team@testdimo.com',     name: 'Finance Team',            role: 'FINANCE',          department: 'Finance' },
     { email: 'court.officer@testdimo.com',    name: 'Ruwan Fernando',          role: 'COURT_OFFICER',    department: 'Legal' },
+    { email: 'rakhita.perera@dimolanka.com',  name: 'Rakhita Perera',          role: 'CLUSTER_DIRECTOR', department: 'Cluster' },
+    { email: 'mangala.wickramasinghe@dimolanka.com', name: 'Mangala Wickramasinghe', role: 'GMC_MEMBER', department: 'GMC' },
+    { email: 'prabath.vidanage@dimolanka.com', name: 'Prabath Vidanage',       role: 'FACILITY_MANAGER', department: 'Facilities' },
   ];
 
   for (const u of users) {

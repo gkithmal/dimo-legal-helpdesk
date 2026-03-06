@@ -1115,12 +1115,13 @@ function LegalOfficerPageContent() {
               ];
               const activeStep = (() => {
                 if (submission.status === 'PENDING_LEGAL_GM') return 2;
-                if (submission.status === 'PENDING_LEGAL_OFFICER' && submission.loStage === 'ACTIVE') return 3;
+                if (submission.status === 'PENDING_LEGAL_OFFICER' && (submission.loStage === 'ACTIVE' || submission.loStage === 'INITIAL_REVIEW' || submission.loStage === 'ASSIGN_COURT_OFFICER')) return 3;
+                if (submission.status === 'PENDING_SPECIAL_APPROVER' && (submission.loStage === 'FINALIZATION' || submission.loStage === 'POST_GM_APPROVAL')) return 4;
                 if (submission.status === 'PENDING_SPECIAL_APPROVER') return 3;
                 if (submission.status === 'PENDING_LEGAL_GM_FINAL') return 4;
-                if (submission.status === 'PENDING_LEGAL_OFFICER' && submission.loStage === 'POST_GM_APPROVAL') return 5;
+                if (submission.status === 'PENDING_LEGAL_OFFICER' && (submission.loStage === 'POST_GM_APPROVAL' || submission.loStage === 'FINALIZATION')) return 5;
                 if (submission.status === 'COMPLETED') return 5;
-                return 1;
+                return 2;
               })();
               return (
                 <div className="relative flex items-start justify-between">

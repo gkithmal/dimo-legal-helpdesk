@@ -345,13 +345,23 @@ function LegalGMForm3PageContent() {
   // ── Derived ──
   const stage: LegalGMStage = (submission?.status === 'PENDING_LEGAL_GM_FINAL' || submission?.legalGmStage === 'FINAL_APPROVAL') ? 'FINAL_APPROVAL' : 'INITIAL_REVIEW';
   const isInitial = stage === 'INITIAL_REVIEW';
+  const gmAlreadyActed = !!submission && !['PENDING_LEGAL_GM', 'PENDING_LEGAL_GM_FINAL'].includes(submission.status);
 
-  const statusToStep: Record<string, number> = {
-    PENDING_APPROVAL: 1, PENDING_LEGAL_GM: 2,
-    PENDING_LEGAL_OFFICER: 3, PENDING_COURT_OFFICER: 3,
-    PENDING_LEGAL_GM_FINAL: 4, COMPLETED: 5, SENT_BACK: 1, CANCELLED: 1,
-  };
-  const activeStep = statusToStep[submission?.status ?? ''] ?? 2;
+  const loStage = submission?.loStage || '';
+  const activeStep = (() => {
+    const status = submission?.status || '';
+    if (status === 'DRAFT') return 0;
+    if (status === 'PENDING_APPROVAL' || status === 'SENT_BACK') return 1;
+    if (status === 'PENDING_LEGAL_GM') return 2;
+    if (status === 'PENDING_LEGAL_OFFICER' && (loStage === 'ACTIVE' || loStage === 'INITIAL_REVIEW' || loStage === 'ASSIGN_COURT_OFFICER')) return 3;
+    if (status === 'PENDING_COURT_OFFICER') return 3;
+    if (status === 'PENDING_SPECIAL_APPROVER' && (loStage === 'FINALIZATION' || loStage === 'POST_GM_APPROVAL')) return 4;
+    if (status === 'PENDING_SPECIAL_APPROVER') return 3;
+    if (status === 'PENDING_LEGAL_GM_FINAL') return 4;
+    if (status === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
+    if (status === 'COMPLETED' || status === 'CANCELLED') return 5;
+    return 1;
+  })();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let meta: Record<string, any> = {};
@@ -621,7 +631,7 @@ function LegalGMForm3PageContent() {
                   <p className="text-[9px] text-slate-400 uppercase tracking-wider">Assigned Legal Officer</p>
                   <p className="text-xs font-bold text-[#17293E] truncate">{assignedOfficer.name || '—'}</p>
                 </div>
-                <button onClick={() => setShowReassign(true)} disabled={isActing}
+                <button onClick={() => setShowReassign(true)} disabled={isActing || gmAlreadyActed}
                   className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-white flex-shrink-0 transition-all active:scale-95 disabled:opacity-50"
                   style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
                   {assignedOfficer.name ? 'Reassign' : 'Assign'}
@@ -630,13 +640,13 @@ function LegalGMForm3PageContent() {
             </div>
 
             <div className="flex gap-2">
-              <button onClick={() => setShowConfirmAction('cancel')} disabled={isActing}
+              <button onClick={() => setShowConfirmAction('cancel')} disabled={isActing || gmAlreadyActed}
                 className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
                 style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>Cancel</button>
-              <button onClick={() => setShowConfirmAction('sendback')} disabled={isActing}
+              <button onClick={() => setShowConfirmAction('sendback')} disabled={isActing || gmAlreadyActed}
                 className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
                 style={{ background: 'linear-gradient(135deg, #f97316, #ea580c)' }}>Send Back</button>
-              <button onClick={() => setShowConfirmAction('approve')} disabled={isActing || (isInitial && !assignedOfficer.name)}
+              <button onClick={() => setShowConfirmAction('approve')} disabled={isActing || gmAlreadyActed || (isInitial && !assignedOfficer.name)}
                 className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70 flex items-center justify-center gap-1"
                 style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
                 {isActing ? <Loader2 className="w-4 h-4 animate-spin" /> : isInitial ? 'OK to Proceed' : 'Approve'}

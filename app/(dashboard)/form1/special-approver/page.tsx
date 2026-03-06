@@ -286,6 +286,7 @@ function SpecialApproverForm1Content() {
   // ── Form state (all read-only for special approver) ──
   const [submissionNo,      setSubmissionNo]      = useState('');
   const [submissionStatus,  setSubmissionStatus]  = useState('');
+  const [submissionLoStage, setSubmissionLoStage] = useState('');
   const [companyCode,       setCompanyCode]       = useState('');
   const [title,             setTitle]             = useState('');
   const [parties,           setParties]           = useState<Party[]>([
@@ -331,6 +332,7 @@ function SpecialApproverForm1Content() {
         const s = d.data;
         setSubmissionNo(s.submissionNo);
         setSubmissionStatus(s.status ?? '');
+        setSubmissionLoStage(s.loStage ?? '');
         setCompanyCode(s.companyCode ?? '');
         setTitle(s.title ?? '');
         setScopeOfAgreement(s.scopeOfAgreement ?? '');
@@ -420,12 +422,19 @@ function SpecialApproverForm1Content() {
     });
   });
 
-  const statusToStep: Record<string, number> = {
-    DRAFT: 0, PENDING_APPROVAL: 1, PENDING_LEGAL_GM: 2,
-    PENDING_LEGAL_OFFICER: 3, PENDING_SPECIAL_APPROVER: 3,
-    PENDING_LEGAL_GM_FINAL: 4, COMPLETED: 5, CANCELLED: 5, SENT_BACK: 1,
-  };
-  const currentStep = statusToStep[submissionStatus] ?? 1;
+  const loStage = submissionLoStage;
+  const currentStep = (() => {
+    if (submissionStatus === 'DRAFT') return 0;
+    if (submissionStatus === 'PENDING_APPROVAL' || submissionStatus === 'SENT_BACK') return 1;
+    if (submissionStatus === 'PENDING_LEGAL_GM') return 2;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'ACTIVE' || loStage === 'INITIAL_REVIEW' || loStage === 'ASSIGN_COURT_OFFICER')) return 3;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER' && (loStage === 'FINALIZATION' || loStage === 'POST_GM_APPROVAL')) return 4;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 3;
+    if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 4;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
+    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 5;
+    return 1;
+  })();
   const isPendingAction = submissionStatus === 'PENDING_SPECIAL_APPROVER';
 
   return (
@@ -634,7 +643,7 @@ function SpecialApproverForm1Content() {
 
           {/* ── Action Buttons ── */}
           <div className="flex gap-3">
-            <button onClick={() => router.push('/special-approver-home')} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all duration-200">
+            <button onClick={() => router.push(ROUTES.SPECIAL_APPROVER_HOME)} className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all duration-200">
               <ArrowLeft className="w-4 h-4" /> Back
             </button>
             {isPendingAction && (
@@ -704,7 +713,7 @@ function SpecialApproverForm1Content() {
             </div>
             <h2 className="text-[#17293E] text-xl font-bold mb-2">Done!</h2>
             <p className="text-slate-500 text-sm mb-6 leading-relaxed">{successMessage}</p>
-            <button onClick={() => router.push('/special-approver-home')} className="w-full py-3 rounded-xl font-bold text-white transition-all active:scale-95 shadow-lg shadow-[#1A438A]/20" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
+            <button onClick={() => router.push(ROUTES.SPECIAL_APPROVER_HOME)} className="w-full py-3 rounded-xl font-bold text-white transition-all active:scale-95 shadow-lg shadow-[#1A438A]/20" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
               Return to Home
             </button>
           </div>

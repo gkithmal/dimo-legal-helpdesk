@@ -17,11 +17,13 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
     const initiatorId = searchParams.get('initiatorId');
+    const formId = searchParams.get('formId');
 
     const submissions = await prisma.submission.findMany({
       where: {
         ...(status ? { status } : { status: { not: 'RESUBMITTED' } }),
         ...(initiatorId && { initiatorId }),
+        ...(formId && { formId: parseInt(formId) }),
       },
       include: {
         parties: true,
@@ -84,8 +86,19 @@ export async function POST(req: NextRequest) {
       legalOfficerId,
       courtOfficerId,
       bumId,
+      gmId,
       fbpId,
       clusterHeadId,
+      f7AgreementRefNo, f7AgreementDate, f7InitiatorContact, f7AssessmentAddress,
+      f7OwnerNames, f7EffectiveTerminationDate, f7EarlyTerminationCharges,
+      f7RefundableDeposit, f7PaymentDate1, f7AdvanceRentals, f7PaymentDate2,
+      f7Deductions, f7FacilityPayments, f7Penalty, f7AmountDueByDimo,
+      f7BalanceToRecover, f7DateInformedToLessee,
+      // Form 9 fields
+      f9PropertyOwnerType, f9PropertyOwnerName, f9NIC, f9BusinessRegNo, f9VATRegNo,
+      f9OwnerContactNo, f9PremisesAssNo, f9PropertyType, f9ConsiderationRs, f9PlanNo,
+      f9LotNo, f9Facilities, f9COCDate, f9GMCApprovalNo, f9GMCApprovalDate,
+      f9InitiatorContactNo, f9Remarks, f9ClusterDirectorId, f9GMCMemberId,
       status,
       parties = [],
       parentId,
@@ -142,7 +155,10 @@ export async function POST(req: NextRequest) {
       const seen = new Set<string>();
       const documentsData: { label: string; type: string; status: string }[] = [];
 
-      if ((formId || 1) === 2) {
+      if ((formId || 1) === 7) {
+        const bodyDocs: { label: string; type?: string; fileUrl?: string | null }[] = body.documents || [];
+        bodyDocs.forEach((d) => { documentsData.push({ label: d.label, type: d.type || 'required', status: 'NONE' }); });
+      } else if ((formId || 1) === 2) {
         // ── Form 2: use full FORM2_DOCS_ALL list ──
         const FORM2_DOCS_ALL = [
           { label: "Offer Letter from the landowner and/or the Life Interest Holder", types: ["all"] },
@@ -208,6 +224,23 @@ export async function POST(req: NextRequest) {
         [...typeSpecific, ...FORM3_BASE].forEach((label) => {
           if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type: 'Common', status: 'NONE' }); }
         });
+      } else if ((formId || 1) === 10) {
+        // ── Form 10: Instruction to Issue Letter of Demand ──
+        const FORM10_BASE = [
+          'Original Agreement (if any)', 'Original Credit Application',
+          'Copies of Letters Sent to the Customer', 'Original Letters Sent by the Customer',
+          'Originals Documents referred to in the Account statement',
+        ];
+        const FORM10_BY_TYPE: Record<string, string[]> = {
+          'Individual': ['NIC', 'Other (Individual)'],
+          'Sole-proprietorship': ['NIC/passport of the sole proprietor', 'Business registration/sole proprietorship certificate', 'Other (Sole proprietorship)'],
+          'Partnership': ['Partnership registration certificate', 'NIC/passport copies of every partner', 'Other (Partnership)'],
+          'Company': ['Incorporation Certificate of the Company', 'Form 1, 13 or any other document to prove the registered address', 'Any other company related documents'],
+        };
+        const typeSpecific10 = partyTypes.flatMap((t: string) => FORM10_BY_TYPE[t] || []);
+        [...typeSpecific10, ...FORM10_BASE].forEach((label) => {
+          if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type: 'Common', status: 'NONE' }); }
+        });
       } else if ((formId || 1) === 4) {
         // ── Form 4: Vehicle Rent Agreement ──
         const FORM4_COMMON = [
@@ -260,17 +293,19 @@ export async function POST(req: NextRequest) {
 
             // ─── Create Submission with All Related Records ───
       // Build approvals based on form type
-      const approvalsData: { role: string; approverName: string; approverEmail: string; status: string }[] = [
-        { role: 'BUM', approverName: bumName, approverEmail: '', status: 'PENDING' },
-        { role: 'FBP', approverName: fbpName, approverEmail: '', status: 'PENDING' },
-      ];
-      // Form 1 and others include Cluster Head; Form 2 also includes CEO
-      if ((formId || 1) !== 3) {
-        approvalsData.push({ role: 'CLUSTER_HEAD', approverName: clusterName, approverEmail: '', status: 'PENDING' });
-      }
-      // Form 2 requires CEO approval after first-level approvers
-      if ((formId || 1) === 2) {
-        approvalsData.push({ role: 'CEO', approverName: '', approverEmail: '', status: 'PENDING' });
+      const approvalsData: { role: string; approverName: string; approverEmail: string; status: string }[] = [];
+      if ((formId || 1) === 7) {
+        approvalsData.push({ role: 'BUM',             approverName: bumId || '', approverEmail: bumId || '', status: 'PENDING' });
+        approvalsData.push({ role: 'GENERAL_MANAGER', approverName: gmId  || '', approverEmail: gmId  || '', status: 'PENDING' });
+      } else {
+        approvalsData.push({ role: 'BUM', approverName: bumName, approverEmail: '', status: 'PENDING' });
+        approvalsData.push({ role: 'FBP', approverName: fbpName, approverEmail: '', status: 'PENDING' });
+        if ((formId || 1) !== 3 && (formId || 1) !== 10) {
+          approvalsData.push({ role: 'CLUSTER_HEAD', approverName: clusterName, approverEmail: '', status: 'PENDING' });
+        }
+        if ((formId || 1) === 2) {
+          approvalsData.push({ role: 'CEO', approverName: '', approverEmail: '', status: 'PENDING' });
+        }
       }
 
       return await tx.submission.create({
@@ -292,11 +327,51 @@ export async function POST(req: NextRequest) {
           courtOfficerId: courtOfficerId || null,
           parentId: parentId || null,
           isResubmission: isResubmission || false,
-          loStage: (formId === 2 ? 'PENDING_CEO' : 'PENDING_LEGAL_GM'),
+          loStage: (formId === 9 ? 'F9_PENDING_ASSIGNMENT' : formId === 2 ? 'PENDING_CEO' : formId === 1 ? 'PENDING_GM' : 'PENDING_LEGAL_GM'),
           legalGmStage: 'INITIAL_REVIEW',
           bumId: bumId || null,
           fbpId: fbpId || null,
           clusterHeadId: clusterHeadId || null,
+          ...(formId === 7 && {
+            f7AgreementRefNo:           f7AgreementRefNo           || null,
+            f7AgreementDate:            f7AgreementDate            || null,
+            f7InitiatorContact:         f7InitiatorContact         || null,
+            f7AssessmentAddress:        f7AssessmentAddress        || null,
+            f7OwnerNames:               f7OwnerNames               || null,
+            f7EffectiveTerminationDate: f7EffectiveTerminationDate || null,
+            f7EarlyTerminationCharges:  f7EarlyTerminationCharges  || null,
+            f7RefundableDeposit:        f7RefundableDeposit        || null,
+            f7PaymentDate1:             f7PaymentDate1             || null,
+            f7AdvanceRentals:           f7AdvanceRentals           || null,
+            f7PaymentDate2:             f7PaymentDate2             || null,
+            f7Deductions:               f7Deductions               || null,
+            f7FacilityPayments:         f7FacilityPayments         || null,
+            f7Penalty:                  f7Penalty                  || null,
+            f7AmountDueByDimo:          f7AmountDueByDimo          || null,
+            f7BalanceToRecover:         f7BalanceToRecover         || null,
+            f7DateInformedToLessee:     f7DateInformedToLessee     || null,
+          }),
+          ...(formId === 9 && {
+            f9PropertyOwnerType:   f9PropertyOwnerType   || null,
+            f9PropertyOwnerName:   f9PropertyOwnerName   || null,
+            f9NIC:                 f9NIC                 || null,
+            f9BusinessRegNo:       f9BusinessRegNo       || null,
+            f9VATRegNo:            f9VATRegNo            || null,
+            f9OwnerContactNo:      f9OwnerContactNo      || null,
+            f9PremisesAssNo:       f9PremisesAssNo       || null,
+            f9PropertyType:        f9PropertyType        || null,
+            f9ConsiderationRs:     f9ConsiderationRs     || null,
+            f9PlanNo:              f9PlanNo              || null,
+            f9LotNo:               f9LotNo               || null,
+            f9Facilities:          f9Facilities          || null,
+            f9COCDate:             f9COCDate             || null,
+            f9GMCApprovalNo:       f9GMCApprovalNo       || null,
+            f9GMCApprovalDate:     f9GMCApprovalDate     || null,
+            f9InitiatorContactNo:  f9InitiatorContactNo  || null,
+            f9Remarks:             f9Remarks             || null,
+            f9ClusterDirectorId:   f9ClusterDirectorId   || null,
+            f9GMCMemberId:         f9GMCMemberId         || null,
+          }),
           dueDate: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000),
           parties: {
             create: (parties as { type: string; name: string }[]).map((p) => ({

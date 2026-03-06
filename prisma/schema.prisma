@@ -12,7 +12,7 @@ model User {
   email         String   @unique
   name          String?
   department    String?
-  role          String   // INITIATOR, BUM, FBP, CLUSTER_HEAD, LEGAL_GM, LEGAL_OFFICER, SPECIAL_APPROVER, FINANCE_TEAM, ADMIN
+  role          String   // INITIATOR, BUM, FBP, CLUSTER_HEAD, CLUSTER_DIRECTOR, GMC_MEMBER, FACILITY_MANAGER, LEGAL_GM, LEGAL_OFFICER, SPECIAL_APPROVER, FINANCE_TEAM, CEO, ADMIN
   isActive      Boolean  @default(true)
   password      String?
   formIds       String?  // JSON array of form IDs e.g. "[1,2,3]"
@@ -106,6 +106,62 @@ model Submission {
   bumId                String?
   fbpId                String?
   clusterHeadId        String?
+  // Form 7 fields
+  f7AgreementRefNo           String?
+  f7AgreementDate            String?
+  f7InitiatorContact         String?
+  f7AssessmentAddress        String?
+  f7OwnerNames               String?
+  f7EffectiveTerminationDate String?
+  f7EarlyTerminationCharges  String?
+  f7RefundableDeposit        String?
+  f7PaymentDate1             String?
+  f7AdvanceRentals           String?
+  f7PaymentDate2             String?
+  f7Deductions               String?
+  f7FacilityPayments         String?
+  f7Penalty                  String?
+  f7AmountDueByDimo          String?
+  f7BalanceToRecover         String?
+  f7DateInformedToLessee     String?
+  f7TerminationLetterRefNo   String?
+  f7TerminationLetterSentDate String?
+  f7TerminationLetterFileUrl String?
+  f7OfficialRemarks          String?
+  f7LegalReviewCompleted     Boolean? @default(false)
+  // Form 9 fields
+  f9PropertyOwnerType   String?
+  f9PropertyOwnerName   String?
+  f9NIC                 String?
+  f9BusinessRegNo       String?
+  f9VATRegNo            String?
+  f9OwnerContactNo      String?
+  f9PremisesAssNo       String?
+  f9PropertyType        String?
+  f9ConsiderationRs     String?
+  f9PlanNo              String?
+  f9LotNo               String?
+  f9Facilities          String?
+  f9COCDate             String?
+  f9GMCApprovalNo       String?
+  f9GMCApprovalDate     String?
+  f9InitiatorContactNo  String?
+  f9Remarks             String?
+  f9ClusterDirectorId   String?
+  f9GMCMemberId         String?
+  f9FacilityManagerId   String?
+  f9BoardResolutionNo   String?
+  f9BoardResolutionDate String?
+  f9StampDutyOpinionNo  String?
+  f9StampDutyRs         String?
+  f9LegalFeeRs          String?
+  f9ReferenceNo         String?
+  f9DeedNo              String?
+  f9DeedDate            String?
+  f9LandRegistryRegNo   String?
+  f9DateHandoverFinance String?
+  f9OfficialRemarks     String?
+  f9LegalReviewCompleted Boolean? @default(false)
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
   parties              SubmissionParty[]

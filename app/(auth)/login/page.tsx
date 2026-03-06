@@ -32,11 +32,16 @@ export default function LoginPage() {
     { label: 'FBP',           email: 'madurika.sama@testdimo.com' },
     { label: 'Cluster Head',  email: 'mangala.wick@testdimo.com' },
     { label: 'Legal Officer', email: 'sandalie.gomes@testdimo.com' },
+    { label: 'Legal Officer 2', email: 'damayanthi.muhandiram@testdimo.com' },
     { label: 'Legal GM',      email: 'dinali.guru@testdimo.com' },
-    { label: 'Spec. Approver', email: 'special.approver@testdimo.com' },
+    { label: 'Special Approver', email: 'special.approver@testdimo.com' },
     { label: 'CEO',            email: 'ceo@testdimo.com' },
-    { label: 'Finance',        email: 'finance.team@testdimo.com' },
-    { label: 'Court Officer',  email: 'court.officer@testdimo.com' },
+    { label: 'GM',  email: 'general.manager@testdimo.com' },
+    { label: 'Court Officer',    email: 'court.officer@testdimo.com' },
+    { label: 'Finance',          email: 'finance.team@testdimo.com' },
+    { label: 'Cluster Director', email: 'cluster.director@testdimo.com' },
+    { label: 'GMC Member',       email: 'gmc.member@testdimo.com' },
+    { label: 'Facility Manager', email: 'facility.manager@testdimo.com' },
   ] : [];
 
   return (

@@ -125,6 +125,7 @@ function QuickPreview({ item, onShowMore, onClose }: {
     COMPLETED:                'text-emerald-600 bg-emerald-50',
   };
 
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -485,13 +486,6 @@ export default function LegalGMHomePage() {
   const [showSignOut, setShowSignOut] = useState(false);
   const router                                = useRouter();
   const { data: session, status } = useSession();
-
-  if (status === 'loading') return null;
-  if (status === 'authenticated' && session?.user?.role !== 'LEGAL_GM') {
-    router.replace('/login');
-    return null;
-  }
-
   const [preview, setPreview]                 = useState<ApprovalItem | null>(null);
   const [approvals, setApprovals]             = useState<ApprovalItem[]>([]);
   const [statsCards, setStatsCards]           = useState<StatsCard[]>([]);
@@ -502,6 +496,10 @@ export default function LegalGMHomePage() {
   const [lateCount, setLateCount]             = useState<Record<number, number>>({});
   const [loadingList, setLoadingList]         = useState(true);
   const [loadingStats, setLoadingStats]       = useState(true);
+
+  const isAuthLoading = status === 'loading';
+
+
 
   // Derived from real session
   const userName    = session?.user?.name  || 'Legal GM';
@@ -558,6 +556,8 @@ export default function LegalGMHomePage() {
       .catch((err) => console.error("Failed to load data:", err))
       .finally(() => setLoadingStats(false));
   }, []);
+
+  if (isAuthLoading) return null;
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-[#f0f4f9]"

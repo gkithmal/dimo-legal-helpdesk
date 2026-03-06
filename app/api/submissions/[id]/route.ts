@@ -38,7 +38,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       ouDirectorsExecuted1, ouDirectorsExecuted2, ouConsideration, ouReviewedBy, ouRegisteredBy,
       ouSignedSupplierCode, ouRemarks, ouSavedAt, financeViewedAt,
       f2StampDuty, f2LegalFees, f2ReferenceNo, f2BoardApproval, f2Remarks,
-      f3GmcApprovalNo, f3CaseNo, f3CaseFillingDate, f3Council, f3Court, f3Remarks } = body;
+      f3GmcApprovalNo, f3CaseNo, f3CaseFillingDate, f3Council, f3Court, f3Remarks,
+      f7TerminationLetterRefNo, f7TerminationLetterSentDate,
+      f7TerminationLetterFileUrl, f7OfficialRemarks, f7LegalReviewCompleted,
+      // Form 9 fields
+      f9PropertyOwnerType, f9PropertyOwnerName, f9NIC, f9BusinessRegNo, f9VATRegNo,
+      f9OwnerContactNo, f9PremisesAssNo, f9PropertyType, f9ConsiderationRs, f9PlanNo,
+      f9LotNo, f9Facilities, f9COCDate, f9GMCApprovalNo, f9GMCApprovalDate,
+      f9InitiatorContactNo, f9Remarks, f9ClusterDirectorId, f9GMCMemberId,
+      f9FacilityManagerId, f9BoardResolutionNo, f9BoardResolutionDate,
+      f9StampDutyOpinionNo, f9StampDutyRs, f9LegalFeeRs, f9ReferenceNo,
+      f9DeedNo, f9DeedDate, f9LandRegistryRegNo, f9DateHandoverFinance,
+      f9OfficialRemarks, f9LegalReviewCompleted,
+      addDocument,
+    } = body;
     // ── Update a single document's fileUrl ──
     if (documentId && fileUrl) {
       const updatedDoc = await prisma.submissionDocument.update({
@@ -58,6 +71,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         },
       });
       return NextResponse.json({ success: true, data: updatedDoc });
+    }
+    if (addDocument) {
+      const doc = await prisma.submissionDocument.create({
+        data: { submissionId: (await params).id, label: addDocument.label, type: addDocument.type || 'legal', status: 'NONE', fileUrl: addDocument.fileUrl || null },
+      });
+      return NextResponse.json({ success: true, data: doc });
     }
     const updated = await prisma.submission.update({
       where: { id: (await params).id },
@@ -92,6 +111,43 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         ...(f3Council !== undefined && { f3Council }),
         ...(f3Court !== undefined && { f3Court }),
         ...(f3Remarks !== undefined && { f3Remarks }),
+        ...(f7TerminationLetterRefNo    !== undefined && { f7TerminationLetterRefNo }),
+        ...(f7TerminationLetterSentDate !== undefined && { f7TerminationLetterSentDate }),
+        ...(f7TerminationLetterFileUrl  !== undefined && { f7TerminationLetterFileUrl }),
+        ...(f7OfficialRemarks           !== undefined && { f7OfficialRemarks }),
+        ...(f7LegalReviewCompleted      !== undefined && { f7LegalReviewCompleted }),
+        ...(f9PropertyOwnerType   !== undefined && { f9PropertyOwnerType }),
+        ...(f9PropertyOwnerName   !== undefined && { f9PropertyOwnerName }),
+        ...(f9NIC                 !== undefined && { f9NIC }),
+        ...(f9BusinessRegNo       !== undefined && { f9BusinessRegNo }),
+        ...(f9VATRegNo            !== undefined && { f9VATRegNo }),
+        ...(f9OwnerContactNo      !== undefined && { f9OwnerContactNo }),
+        ...(f9PremisesAssNo       !== undefined && { f9PremisesAssNo }),
+        ...(f9PropertyType        !== undefined && { f9PropertyType }),
+        ...(f9ConsiderationRs     !== undefined && { f9ConsiderationRs }),
+        ...(f9PlanNo              !== undefined && { f9PlanNo }),
+        ...(f9LotNo               !== undefined && { f9LotNo }),
+        ...(f9Facilities          !== undefined && { f9Facilities }),
+        ...(f9COCDate             !== undefined && { f9COCDate }),
+        ...(f9GMCApprovalNo       !== undefined && { f9GMCApprovalNo }),
+        ...(f9GMCApprovalDate     !== undefined && { f9GMCApprovalDate }),
+        ...(f9InitiatorContactNo  !== undefined && { f9InitiatorContactNo }),
+        ...(f9Remarks             !== undefined && { f9Remarks }),
+        ...(f9ClusterDirectorId   !== undefined && { f9ClusterDirectorId }),
+        ...(f9GMCMemberId         !== undefined && { f9GMCMemberId }),
+        ...(f9FacilityManagerId   !== undefined && { f9FacilityManagerId }),
+        ...(f9BoardResolutionNo   !== undefined && { f9BoardResolutionNo }),
+        ...(f9BoardResolutionDate !== undefined && { f9BoardResolutionDate }),
+        ...(f9StampDutyOpinionNo  !== undefined && { f9StampDutyOpinionNo }),
+        ...(f9StampDutyRs         !== undefined && { f9StampDutyRs }),
+        ...(f9LegalFeeRs          !== undefined && { f9LegalFeeRs }),
+        ...(f9ReferenceNo         !== undefined && { f9ReferenceNo }),
+        ...(f9DeedNo              !== undefined && { f9DeedNo }),
+        ...(f9DeedDate            !== undefined && { f9DeedDate }),
+        ...(f9LandRegistryRegNo   !== undefined && { f9LandRegistryRegNo }),
+        ...(f9DateHandoverFinance !== undefined && { f9DateHandoverFinance }),
+        ...(f9OfficialRemarks     !== undefined && { f9OfficialRemarks }),
+        ...(f9LegalReviewCompleted !== undefined && { f9LegalReviewCompleted }),
         updatedAt: new Date(),
       },
       include: { parties: true, approvals: true, documents: true, comments: true, specialApprovers: true },

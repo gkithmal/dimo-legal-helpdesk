@@ -70,6 +70,7 @@ function SpecialApproverForm2Content() {
 
   const [submissionNo,     setSubmissionNo]     = useState('');
   const [submissionStatus, setSubmissionStatus] = useState('');
+  const [loStageValue,     setLoStageValue]     = useState('');
   const [isLoading,        setIsLoading]        = useState(true);
   const [loadError,        setLoadError]        = useState('');
   const [isActing,         setIsActing]         = useState(false);
@@ -130,6 +131,7 @@ function SpecialApproverForm2Content() {
       const s = data.data;
       setSubmissionNo(s.submissionNo);
       setSubmissionStatus(s.status ?? '');
+      setLoStageValue(s.loStage ?? '');
 
       let meta: Record<string, any> = {};
       try { meta = JSON.parse(s.scopeOfAgreement || '{}'); } catch {}
@@ -228,13 +230,19 @@ function SpecialApproverForm2Content() {
     setCommentInput('');
   };
 
-  const statusToStep: Record<string, number> = {
-    DRAFT: 0, PENDING_APPROVAL: 1, PENDING_CEO: 2,
-    PENDING_LEGAL_GM: 3, PENDING_LEGAL_OFFICER: 4,
-    PENDING_SPECIAL_APPROVER: 4, PENDING_LEGAL_GM_FINAL: 5,
-    COMPLETED: 6, CANCELLED: 6, SENT_BACK: 1,
-  };
-  const currentStep = statusToStep[submissionStatus] ?? 1;
+  const currentStep = (() => {
+    if (submissionStatus === 'DRAFT') return 0;
+    if (submissionStatus === 'PENDING_APPROVAL' || submissionStatus === 'SENT_BACK') return 1;
+    if (submissionStatus === 'PENDING_CEO') return 2;
+    if (submissionStatus === 'PENDING_LEGAL_GM') return 3;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStageValue === 'ACTIVE' || loStageValue === 'INITIAL_REVIEW')) return 4;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER' && (loStageValue === 'FINALIZATION' || loStageValue === 'POST_GM_APPROVAL')) return 5;
+    if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 4;
+    if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 5;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStageValue === 'POST_GM_APPROVAL' || loStageValue === 'FINALIZATION')) return 6;
+    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 6;
+    return 1;
+  })();
   const isPendingAction = submissionStatus === 'PENDING_SPECIAL_APPROVER';
 
   // ── Loading / error ──

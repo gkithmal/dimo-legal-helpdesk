@@ -356,12 +356,21 @@ function CourtOfficerPageContent() {
   const coStage: COStage = mapCOStage(submission?.status ?? '', submission?.loStage);
   const isFinalConfirmation = coStage === 'FINAL_CONFIRMATION';
 
-  const statusToStep: Record<string, number> = {
-    PENDING_APPROVAL: 1, PENDING_LEGAL_GM: 2,
-    PENDING_LEGAL_OFFICER: 3, PENDING_COURT_OFFICER: 3,
-    PENDING_LEGAL_GM_FINAL: 4, COMPLETED: 5, SENT_BACK: 1, CANCELLED: 1,
-  };
-  const activeStep = statusToStep[submission?.status ?? ''] ?? 3;
+  const activeStep = (() => {
+    const status = submission?.status || '';
+    const rawLoStage = submission?.loStage || '';
+    if (status === 'DRAFT') return 0;
+    if (status === 'PENDING_APPROVAL' || status === 'SENT_BACK') return 1;
+    if (status === 'PENDING_LEGAL_GM') return 2;
+    if (status === 'PENDING_LEGAL_OFFICER' && (rawLoStage === 'ACTIVE' || rawLoStage === 'INITIAL_REVIEW' || rawLoStage === 'ASSIGN_COURT_OFFICER')) return 3;
+    if (status === 'PENDING_COURT_OFFICER') return 3;
+    if (status === 'PENDING_SPECIAL_APPROVER' && (rawLoStage === 'FINALIZATION' || rawLoStage === 'POST_GM_APPROVAL')) return 4;
+    if (status === 'PENDING_SPECIAL_APPROVER') return 3;
+    if (status === 'PENDING_LEGAL_GM_FINAL') return 4;
+    if (status === 'PENDING_LEGAL_OFFICER' && (rawLoStage === 'POST_GM_APPROVAL' || rawLoStage === 'FINALIZATION')) return 5;
+    if (status === 'COMPLETED' || status === 'CANCELLED') return 5;
+    return 1;
+  })();
 
   // Parse Form 3 meta
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

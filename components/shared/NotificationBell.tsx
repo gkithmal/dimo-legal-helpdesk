@@ -30,6 +30,7 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [notifs, setNotifs] = useState<Notif[]>([]);
   const panelRef = useRef<HTMLDivElement>(null);
+  const portalRef = useRef<HTMLDivElement>(null);
 
   const role = session?.user?.role ?? '';
   const userId = session?.user?.id ?? '';
@@ -67,6 +68,17 @@ export default function NotificationBell() {
               time: s.updatedAt,
             });
           }
+          // Initiator: request completed
+          if (role === 'INITIATOR' && s.initiatorId === userId && s.status === 'COMPLETED') {
+            items.push({
+              id: `${s.id}-completed`,
+              title: 'Request Completed',
+              subtitle: `${s.submissionNo} has been completed by Legal`,
+              type: 'info',
+              route: `/form${s.formId || 1}?mode=view&id=${s.id}`,
+              time: s.updatedAt,
+            });
+          }
           // Legal GM: pending initial review
           if (role === 'LEGAL_GM' && s.status === 'PENDING_LEGAL_GM') {
             items.push({
@@ -100,7 +112,7 @@ export default function NotificationBell() {
             });
           }
           // Finance: completed submissions to view
-          if (role === 'FINANCE' && s.status === 'PENDING_LEGAL_GM_FINAL') {
+          if (role === 'FINANCE' && s.status === 'COMPLETED' && !s.financeViewedAt) {
             items.push({
               id: s.id,
               title: 'New Submission',
@@ -122,7 +134,7 @@ export default function NotificationBell() {
             });
           }
           // Legal Officer: active submissions
-          if (role === 'LEGAL_OFFICER' && s.status === 'PENDING_LEGAL_OFFICER' && s.assignedLegalOfficer === session?.user?.email) {
+          if (role === 'LEGAL_OFFICER' && s.status === 'PENDING_LEGAL_OFFICER' && s.assignedLegalOfficer === session?.user?.id) {
             items.push({
               id: s.id,
               title: 'Action Required',
@@ -158,7 +170,10 @@ export default function NotificationBell() {
   // Close on outside click
   useEffect(() => {
     function handle(e: MouseEvent) {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      const inPanel = panelRef.current && panelRef.current.contains(target);
+      const inPortal = portalRef.current && portalRef.current.contains(target);
+      if (!inPanel && !inPortal) setOpen(false);
     }
     if (open) document.addEventListener('mousedown', handle);
     return () => document.removeEventListener('mousedown', handle);
@@ -187,7 +202,7 @@ export default function NotificationBell() {
       </button>
 
       {open && createPortal(
-        <div className="fixed left-[84px] top-4 w-72 rounded-2xl shadow-2xl overflow-hidden z-[99999] border border-white/10"
+        <div ref={portalRef} className="fixed left-[84px] top-4 w-72 rounded-2xl shadow-2xl overflow-hidden z-[99999] border border-white/10"
           style={{ background: 'linear-gradient(160deg, #0f2240 0%, #17293E 100%)' }}>
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
