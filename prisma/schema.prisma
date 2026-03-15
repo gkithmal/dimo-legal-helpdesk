@@ -5,6 +5,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -285,6 +286,7 @@ model FormConfigDoc {
   formConfigId String
   label        String
   type         String
+  isRequired   Boolean    @default(true)
   sortOrder    Int        @default(0)
   formConfig   FormConfig @relation(fields: [formConfigId], references: [id], onDelete: Cascade)
   @@map("form_config_docs")

@@ -69,6 +69,13 @@ function SectionDivider({ children }: { children: React.ReactNode }) {
   );
 }
 
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'OK')        return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">OK</span>;
+  if (status === 'ATTENTION') return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">Attention</span>;
+  if (status === 'RESUBMIT')  return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">Resubmit</span>;
+  return null;
+}
+
 function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
@@ -145,6 +152,7 @@ function SpecialApproverForm6Content() {
   const [submissionNo, setSubmissionNo] = useState('');
   const [submissionStatus, setSubmissionStatus] = useState('');
   const [submissionLoStage, setSubmissionLoStage] = useState('');
+  const [applicantName, setApplicantName] = useState('');
   const [nameOfApplicant, setNameOfApplicant] = useState('');
   const [sapCostCenter, setSapCostCenter] = useState('');
   const [trademarkClass, setTrademarkClass] = useState('');
@@ -154,6 +162,7 @@ function SpecialApproverForm6Content() {
   const [fbp, setFbp] = useState('');
   const [clusterHead, setClusterHead] = useState('');
   const [docFiles, setDocFiles] = useState<Record<string, AttachedFile[]>>({});
+  const [docStatuses, setDocStatuses] = useState<Record<string, string>>({});
   const [comments, setComments] = useState<CommentEntry[]>([]);
   const [commentInput, setCommentInput] = useState('');
   const [uploadPopup, setUploadPopup] = useState<{ docKey: string; docLabel: string } | null>(null);
@@ -188,6 +197,7 @@ function SpecialApproverForm6Content() {
         setSapCostCenter(s.sapCostCenter ?? '');
         try {
           const scope = JSON.parse(s.scopeOfAgreement || '{}');
+          setApplicantName(scope.applicantName ?? '');
           setTrademarkClass(scope.trademarkClass ?? '');
           setArtworkOrWord(scope.artworkOrWord ?? '');
           setRemarks(scope.remarks ?? '');
@@ -201,12 +211,15 @@ function SpecialApproverForm6Content() {
         }
         if (s.documents?.length) {
           const loaded: Record<string, AttachedFile[]> = {};
+          const statuses: Record<string, string> = {};
           s.documents.forEach((doc: any) => {
+            statuses[doc.label] = doc.status || 'NONE';
             if (doc.fileUrl) {
               loaded[doc.label] = [{ id: doc.id, name: doc.label, size: 0, file: { name: doc.label, size: 0 } as File, fileUrl: doc.fileUrl }];
             }
           });
           setDocFiles(loaded);
+          setDocStatuses(statuses);
         }
       })
       .catch(err => console.error('Failed to load submission:', err));
@@ -361,9 +374,10 @@ function SpecialApproverForm6Content() {
             </div>
             <div className="px-6 py-6 space-y-5">
               <SectionDivider>Applicant Details</SectionDivider>
+              <ReadField label="Name of the Applicant" value={applicantName} />
               <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Name of Applicant" value={nameOfApplicant} />
-                <ReadField label="SAP Cost Centre" value={sapCostCenter} />
+                <ReadField label="SAP Company codes" value={nameOfApplicant} />
+                <ReadField label="SAP Cost Center" value={sapCostCenter} />
               </div>
 
               <SectionDivider>Trademark Details</SectionDivider>
@@ -416,13 +430,18 @@ function SpecialApproverForm6Content() {
                 </div>
               ) : allDocKeys.map((key, i) => {
                 const files = docFiles[key] || [];
+                const docStatus = docStatuses[key] || 'NONE';
                 return (
-                  <div key={key} className="flex items-center justify-between rounded-lg px-3 py-2 bg-emerald-50 border border-emerald-200">
+                  <div key={key} className={`flex items-center justify-between rounded-lg px-3 py-2 border
+                    ${docStatus === 'ATTENTION' ? 'bg-yellow-50 border-yellow-200' :
+                      docStatus === 'RESUBMIT'  ? 'bg-red-50 border-red-200' :
+                      'bg-emerald-50 border-emerald-200'}`}>
                     <div className="flex-1 mr-2 min-w-0">
                       <span className="text-[11px] text-slate-600 leading-tight block">
                         <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{key}
                       </span>
                       <span className="text-[10px] text-emerald-600 font-semibold">{files.length} file{files.length > 1 ? 's' : ''}</span>
+                      {docStatus !== 'NONE' && <StatusBadge status={docStatus} />}
                     </div>
                     <button onClick={() => setUploadPopup({ docKey: key, docLabel: key })} className="flex-shrink-0">
                       <Eye className="w-4 h-4 text-[#1A438A]" />

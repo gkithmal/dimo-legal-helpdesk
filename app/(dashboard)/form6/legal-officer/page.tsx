@@ -9,13 +9,14 @@ import {
   LogOut, Home, Lightbulb, Search, Settings, User,
   ArrowLeft, CheckCircle2, FileText, Clock, XCircle,
   RotateCcw, Send, Paperclip, Plus, ChevronDown, Eye,
-  AlertCircle, Upload, X, Calendar, Loader2,
+  AlertCircle, Upload, X, Loader2,
 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type LOStage = 'PENDING_GM' | 'REASSIGNED' | 'ACTIVE' | 'POST_GM_APPROVAL';
-type DocStatus = 'NONE' | 'OK' | 'ATTENTION' | 'RESUBMIT';
+type DocStatus = 'NONE' | 'OK' | 'ATTENTION' | 'RESUBMIT' | 'UPLOADED';
 
 type RequiredDoc = { id: string; label: string; status: DocStatus; hasFile: boolean; fileUrl?: string | null; comment?: string };
 type PreparedDoc = { id: string; name: string; type: 'initial' | 'final'; fileUrl?: string | null };
@@ -61,14 +62,17 @@ const DEPT_APPROVERS: Record<string, string[]> = {
   'IT Department':                      ['ranjan.gunaw@dimolanka.com'],
 };
 
-const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head' };
+const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head', CEO: 'CEO', LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function mapLoStage(dbStage: string): LOStage {
-  if (dbStage === 'ACTIVE')           return 'ACTIVE';
-  if (dbStage === 'POST_GM_APPROVAL') return 'POST_GM_APPROVAL';
-  if (dbStage === 'REASSIGNED')       return 'REASSIGNED';
+  if (dbStage === 'ACTIVE')              return 'ACTIVE';
+  if (dbStage === 'INITIAL_REVIEW')      return 'ACTIVE';
+  if (dbStage === 'ASSIGN_COURT_OFFICER') return 'ACTIVE';
+  if (dbStage === 'POST_GM_APPROVAL')    return 'POST_GM_APPROVAL';
+  if (dbStage === 'FINALIZATION')         return 'POST_GM_APPROVAL';
+  if (dbStage === 'REASSIGNED')          return 'REASSIGNED';
   return 'PENDING_GM';
 }
 
@@ -94,6 +98,7 @@ function SectionDivider({ children }: { children: React.ReactNode }) {
 }
 
 function DocStatusIcon({ status }: { status: DocStatus }) {
+  if (status === 'UPLOADED')  return <span className="w-4 h-4 rounded-full bg-emerald-400 flex items-center justify-center"><Paperclip className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'OK')        return <span className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center"><CheckCircle2 className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'ATTENTION') return <span className="w-4 h-4 rounded-full bg-yellow-400 flex items-center justify-center"><AlertCircle className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'RESUBMIT')  return <span className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center"><XCircle className="w-2.5 h-2.5 text-white" /></span>;
@@ -131,7 +136,22 @@ function AttachmentPreviewPage({ doc, canAct, onSave, onBack }: {
           </div>
           <div className="flex-1 overflow-hidden">
             {doc.fileUrl ? (
-              <iframe src={doc.fileUrl} className="w-full h-full border-0" title={doc.label} />
+              /\.(png|jpe?g|gif|webp|svg)$/i.test(doc.fileUrl) ? (
+                <div className="w-full h-full flex items-center justify-center bg-slate-50 p-4">
+                  <img src={doc.fileUrl} alt={doc.label} className="max-w-full max-h-full object-contain rounded-lg shadow" />
+                </div>
+              ) : (
+                <object data={doc.fileUrl} type="application/pdf" className="w-full h-full border-0">
+                  <div className="flex flex-col items-center justify-center h-full gap-3 bg-slate-50">
+                    <FileText className="w-16 h-16 text-slate-200" />
+                    <p className="text-sm font-medium text-slate-400">Cannot preview this file.</p>
+                    <a href={doc.fileUrl} target="_blank" rel="noreferrer"
+                      className="px-4 py-2 rounded-lg bg-[#1A438A] text-white text-xs font-bold hover:bg-[#1e5aad] transition-colors">
+                      Open File
+                    </a>
+                  </div>
+                </object>
+              )
             ) : (
               <div className="flex flex-col items-center justify-center h-full gap-3 bg-slate-50">
                 <FileText className="w-16 h-16 text-slate-200" />
@@ -292,7 +312,7 @@ function RequestMoreDocsModal({ onClose, submissionId }: { onClose: () => void; 
         </div>
         <div className="p-5">
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4}
-            placeholder="e.g. Please upload the latest Form 20..."
+            placeholder="Enter instructions for the initiator..."
             className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:border-[#1A438A]" />
         </div>
         <div className="flex gap-3 px-6 pb-5">
@@ -419,7 +439,7 @@ function AddDocumentModal({ onAdd, onClose }: { onAdd: (name: string, type: 'ini
         <div className="p-5 space-y-4">
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Document Name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Initial Draft"
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter document name..."
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A]" />
           </div>
           <div>
@@ -470,9 +490,9 @@ function AddDocumentModal({ onAdd, onClose }: { onAdd: (name: string, type: 'ini
 
 // ─── Form 6 NIPO Finalization Modal ──────────────────────────────────────────
 
-function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, initialFields }: {
-  submissionNo: string; submissionId: string; onClose: () => void; onComplete: () => void;
-  initialFields?: Record<string, string>;
+function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, initialFields, readOnly = false }: {
+  submissionNo: string; submissionId: string; onClose: () => void; onComplete: () => Promise<void>;
+  initialFields?: Record<string, string>; readOnly?: boolean;
 }) {
   const [fields, setFields] = useState<Record<string, string>>(initialFields || {});
   const [modal, setModal]   = useState<'saveConfirm' | 'jobConfirm' | 'saveSuccess' | 'jobSuccess' | null>(null);
@@ -513,7 +533,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
   if (modal === 'jobConfirm') return (
     <ConfirmModal title="Complete this request?" message="Initiator will be notified. This action cannot be undone."
       confirmLabel="Yes, Complete" confirmColor="linear-gradient(135deg, #22c55e, #16a34a)"
-      onConfirm={async () => { setLoading(true); await onComplete(); setLoading(false); setModal('jobSuccess'); }}
+      onConfirm={async () => { setLoading(true); await saveToDb(); await onComplete(); setLoading(false); setModal('jobSuccess'); }}
       onClose={() => setModal(null)} loading={loading} />
   );
   if (modal === 'saveSuccess') return (
@@ -527,9 +547,15 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
-        <div className="px-6 py-4 text-white font-bold text-sm" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
-          Trademark Registration Details (Legal Officer should enter)
+        <div className="px-6 py-4 text-white font-bold text-sm flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
+          <span>Trademark Registration Details (Legal Officer should enter)</span>
+          {readOnly && <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white/20">View Only</span>}
         </div>
+        {readOnly && (
+          <div className="mx-6 mt-4 px-4 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-sm text-emerald-700 font-medium flex items-center gap-2">
+            <span>✓</span><span>This request has been completed. No further changes can be made.</span>
+          </div>
+        )}
         <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
           <div className="grid grid-cols-2 gap-4">
             {/* Date of Search at NIPO — REQUIRED */}
@@ -537,11 +563,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                 Date of Search at NIPO <span className="text-red-400">*</span>
               </label>
-              <div className="relative">
-                <input type="date" value={fields.dateOfSearchNIPO || ''} onChange={(e) => set('dateOfSearchNIPO', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <DatePicker value={fields.dateOfSearchNIPO || ''} onChange={(v) => set('dateOfSearchNIPO', v)} disabled={readOnly} />
             </div>
             {/* Trademark No. — REQUIRED */}
             <div>
@@ -549,63 +571,65 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
                 Trademark No. <span className="text-red-400">*</span>
               </label>
               <input value={fields.trademarkNo || ''} onChange={(e) => set('trademarkNo', e.target.value)}
-                placeholder="e.g. TM-2026-001234"
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+                placeholder="Enter trademark number..." disabled={readOnly}
+                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] disabled:bg-slate-100 disabled:text-slate-500" />
             </div>
             {/* Date of Publication in Government Gazette */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Date of Publication in Government Gazette</label>
               <input value={fields.datePublicationGazette || ''} onChange={(e) => set('datePublicationGazette', e.target.value)}
-                placeholder="e.g. 15/03/2026"
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+                disabled={readOnly}
+                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] disabled:bg-slate-100 disabled:text-slate-500" />
             </div>
             {/* Certificate Issued Date */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Certificate Issued Date</label>
-              <div className="relative">
-                <input type="date" value={fields.certificateIssuedDate || ''} onChange={(e) => set('certificateIssuedDate', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <DatePicker value={fields.certificateIssuedDate || ''} onChange={(v) => set('certificateIssuedDate', v)} disabled={readOnly} />
             </div>
             {/* Refusal of Registration Hearing Date */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Refusal of Registration Hearing Date</label>
               <input value={fields.refusalHearingDate || ''} onChange={(e) => set('refusalHearingDate', e.target.value)}
-                placeholder="e.g. 20/04/2026"
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+                disabled={readOnly}
+                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] disabled:bg-slate-100 disabled:text-slate-500" />
             </div>
             {/* Date of submitting written submissions */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Date of Submitting Written Submissions</label>
               <input value={fields.dateSubmittingWritten || ''} onChange={(e) => set('dateSubmittingWritten', e.target.value)}
-                placeholder="e.g. 25/04/2026"
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+                disabled={readOnly}
+                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] disabled:bg-slate-100 disabled:text-slate-500" />
             </div>
           </div>
           {/* Remarks */}
           <div>
             <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Remarks</label>
             <textarea value={fields.remarksLO || ''} onChange={(e) => set('remarksLO', e.target.value)} rows={3}
-              placeholder="Any additional remarks..."
-              className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm resize-none focus:outline-none focus:border-[#1A438A]" />
+              placeholder="Any additional remarks..." disabled={readOnly}
+              className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm resize-none focus:outline-none focus:border-[#1A438A] disabled:bg-slate-100 disabled:text-slate-500" />
           </div>
         </div>
         {validationError && (
           <div className="mx-6 mb-2 px-4 py-2.5 rounded-xl bg-red-50 border border-red-200 text-sm text-red-600 font-medium">{validationError}</div>
         )}
         <div className="flex gap-3 px-6 pb-5 pt-3 border-t border-slate-100">
-          <button onClick={onClose} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-[#17293E] text-[#17293E] hover:bg-[#17293E] hover:text-white transition-all">Back</button>
-          <button onClick={() => setModal('saveConfirm')} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>Save and Close</button>
-          <button onClick={() => {
-            const missing = REQUIRED_FIELDS.filter(f => !fields[f]);
-            if (missing.length > 0) {
-              setValidationError('Please fill in: ' + missing.map(f => FIELD_LABELS[f]).join(', '));
-              return;
-            }
-            setValidationError('');
-            setModal('jobConfirm');
-          }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>Job Completion</button>
+          {readOnly ? (
+            <button onClick={onClose} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-[#17293E] text-[#17293E] hover:bg-[#17293E] hover:text-white transition-all">Close</button>
+          ) : (
+            <>
+              <button onClick={onClose} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-[#17293E] text-[#17293E] hover:bg-[#17293E] hover:text-white transition-all">Back</button>
+              <button onClick={() => setModal('saveConfirm')} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>Save and Close</button>
+              <button onClick={() => {
+                const missing = REQUIRED_FIELDS.filter(f => !fields[f]);
+                if (missing.length > 0) {
+                  setValidationError('Please fill in: ' + missing.map(f => FIELD_LABELS[f]).join(', '));
+                  return;
+                }
+                setValidationError('');
+                setModal('jobConfirm');
+              }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>Job Completion</button>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -817,12 +841,12 @@ function LegalOfficerPageContent() {
 
   const postCommentToAPI = async (text: string) => {
     if (!submissionId) return;
-    fetch(`/api/submissions/${submissionId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ authorName: submission?.assignedLegalOfficer || "Legal Officer", authorRole: "LEGAL_OFFICER", text }) });
+    fetch(`/api/submissions/${submissionId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ authorName: session?.user?.name || "Legal Officer", authorRole: "LEGAL_OFFICER", text }) });
   };
 
   const postComment = () => {
     if (!commentInput.trim()) return;
-    setComments((prev) => [...prev, { id: Date.now(), author: 'Me', role: submission?.assignedLegalOfficer || 'Legal Officer', avatar: 'S', text: commentInput.trim(), time: 'Just now', side: 'right' }]);
+    setComments((prev) => [...prev, { id: Date.now(), author: 'Me', role: session?.user?.name || 'Legal Officer', avatar: 'S', text: commentInput.trim(), time: 'Just now', side: 'right' }]);
     postCommentToAPI(commentInput.trim());
     setCommentInput('');
   };
@@ -1014,8 +1038,18 @@ function LegalOfficerPageContent() {
                 <ReadField label="Submission No." value={submission.submissionNo} />
                 <ReadField label="Status" value={submission.status} />
               </div>
+              <SectionDivider>Applicant Details</SectionDivider>
+              {(() => {
+                try {
+                  const scope = JSON.parse(submission.scopeOfAgreement || '{}');
+                  return <ReadField label="Name of the Applicant" value={scope.applicantName || ''} />;
+                } catch { return null; }
+              })()}
+              <div className="grid grid-cols-2 gap-4">
+                <ReadField label="SAP Company codes" value={submission.companyCode} />
+                <ReadField label="SAP Cost Center" value={submission.sapCostCenter} />
+              </div>
               <SectionDivider>Trademark Details</SectionDivider>
-              <ReadField label="SAP Cost Center" value={submission.sapCostCenter} />
               {(() => {
                 try {
                   const scope = JSON.parse(submission.scopeOfAgreement || '{}');
@@ -1099,6 +1133,7 @@ function LegalOfficerPageContent() {
                     ${doc.status === 'ATTENTION' ? 'bg-yellow-50 border-yellow-300'
                     : doc.status === 'RESUBMIT'  ? 'bg-red-50 border-red-200'
                     : doc.status === 'OK'         ? 'bg-emerald-50 border-emerald-200'
+                    : doc.status === 'UPLOADED'    ? 'bg-emerald-50 border-emerald-200'
                     : 'bg-slate-50 border-slate-100 hover:border-[#1A438A]/20'}`}>
                   <span className={`text-[11px] flex-1 mr-2 leading-tight
                     ${doc.status === 'ATTENTION' ? 'text-yellow-800 font-semibold'
@@ -1276,8 +1311,14 @@ function LegalOfficerPageContent() {
             {loStage === 'POST_GM_APPROVAL' && (
               <>
                 {submission.status === 'COMPLETED' ? (
-                  <div className="w-full py-3 rounded-xl font-bold text-sm text-center bg-emerald-50 border-2 border-emerald-200 text-emerald-700">
-                    ✓ This request has been completed
+                  <div className="space-y-2">
+                    <div className="w-full py-3 rounded-xl font-bold text-sm text-center bg-emerald-50 border-2 border-emerald-200 text-emerald-700">
+                      ✓ This request has been completed
+                    </div>
+                    <button onClick={() => setShowOfficialUse(true)}
+                      className="w-full py-2.5 rounded-xl font-bold text-sm text-[#1A438A] border-2 border-[#1A438A]/30 hover:bg-[#EEF3F8] transition-all">
+                      View Job Completion Details
+                    </button>
                   </div>
                 ) : (
                   <>
@@ -1355,6 +1396,7 @@ function LegalOfficerPageContent() {
         submissionId={submission.id}
         onClose={() => setShowOfficialUse(false)}
         onComplete={handleComplete}
+        readOnly={submission.status === 'COMPLETED'}
         initialFields={{
           dateOfSearchNIPO: (submission as any).ouRegisteredDate || '',
           trademarkNo: (submission as any).ouLegalRefNumber || '',

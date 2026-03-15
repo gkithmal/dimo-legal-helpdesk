@@ -60,6 +60,16 @@ function ReadField({ label, value, multiline = false }: { label: string; value: 
   );
 }
 
+function mapApprovalStatus(status: string): string {
+  const map: Record<string, string> = {
+    APPROVED: 'Approved', OK_TO_PROCEED: 'OK to Proceed', SENT_BACK: 'Sent Back',
+    CANCELLED: 'Cancelled', SUBMIT_TO_LEGAL_GM: 'Submitted to Legal GM',
+    SUBMIT_TO_LEGAL_OFFICER: 'Submitted to Legal Officer',
+    RETURNED_TO_INITIATOR: 'Returned to Initiator', COMPLETED: 'Completed',
+  };
+  return map[status] ?? status;
+}
+
 function SectionHeader({ children }: { children: React.ReactNode }) {
   return (
     <div className="rounded-lg px-4 py-2.5 mb-3" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
@@ -244,11 +254,6 @@ function LegalGMForm3PageContent() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const searchParams = useSearchParams();
-  if (status === 'loading') return null;
-  if (status === 'authenticated' && !['LEGAL_GM'].includes(session?.user?.role as string)) {
-    router.replace('/');
-    return null;
-  }
   const submissionId = searchParams.get('id');
   const [showSignOut, setShowSignOut] = useState(false);
 
@@ -257,7 +262,7 @@ function LegalGMForm3PageContent() {
   const [loadError, setLoadError] = useState('');
   const [isActing, setIsActing] = useState(false);
   const [apiError, setApiError] = useState('');
-  const [assignedOfficer, setAssignedOfficer] = useState({ name: '', email: '' });
+  const [assignedOfficer, setAssignedOfficer] = useState({ name: '', email: '', id: '' });
   const [legalOfficers, setLegalOfficers] = useState<{ id?: string; name: string; email: string }[]>([]);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [comments, setComments] = useState<CommentEntry[]>([]);
@@ -275,12 +280,12 @@ function LegalGMForm3PageContent() {
       if (!res.ok || !data.success) throw new Error(data.error || 'Failed to load');
       const s = data.data;
       setSubmission(s);
-      setAssignedOfficer({ name: s.legalOfficerName || s.assignedLegalOfficer || '', email: '' });
+      setAssignedOfficer({ name: s.legalOfficerName || s.assignedLegalOfficer || '', email: '', id: s.assignedLegalOfficer || '' });
       const seedLog: LogEntry[] = [
         { id: 0, actor: 'System', role: 'System', action: 'Submission created', timestamp: fmtDate(s.createdAt) },
         ...s.approvals.filter((a: ApproverRecord) => a.actionDate).map((a: ApproverRecord, i: number) => ({
           id: i + 1, actor: a.approverName || a.role, role: ROLE_LABEL[a.role] ?? a.role,
-          action: a.status === 'APPROVED' ? 'Approved' : a.status === 'SENT_BACK' ? 'Sent Back' : 'Cancelled',
+          action: mapApprovalStatus(a.status as string),
           comment: a.comment ?? undefined, timestamp: fmtDate(a.actionDate),
         })),
       ];
@@ -300,6 +305,12 @@ function LegalGMForm3PageContent() {
       .catch(() => {});
   }, []);
 
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && !['LEGAL_GM'].includes(session?.user?.role as string)) {
+    router.replace('/');
+    return null;
+  }
+
   const callApproveAPI = async (action: 'APPROVED' | 'SENT_BACK' | 'CANCELLED', comment?: string) => {
     if (!submissionId) return;
     setIsActing(true); setApiError('');
@@ -310,7 +321,7 @@ function LegalGMForm3PageContent() {
           role: 'LEGAL_GM', action, comment: comment || null,
           approverName: session?.user?.name || '',
           approverEmail: session?.user?.email || '',
-          assignedOfficer: assignedOfficer.email || assignedOfficer.name,
+          assignedOfficer: assignedOfficer.id || assignedOfficer.email || assignedOfficer.name,
         }),
       });
       const data = await res.json();
@@ -664,7 +675,7 @@ function LegalGMForm3PageContent() {
       {showReassign && (
         <ReassignModal currentOfficer={assignedOfficer.name} officers={legalOfficers}
           onSave={async (name, email) => {
-            setAssignedOfficer({ name, email });
+            setAssignedOfficer({ name, email, id: legalOfficers.find((o: any) => o.name === name)?.id || '' });
             if (submissionId) {
               await fetch(`/api/submissions/${submissionId}`, {
                 method: 'PATCH', headers: { 'Content-Type': 'application/json' },

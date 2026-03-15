@@ -69,6 +69,13 @@ function SectionDivider({ children }: { children: React.ReactNode }) {
   );
 }
 
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'OK')        return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">OK</span>;
+  if (status === 'ATTENTION') return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">Attention</span>;
+  if (status === 'RESUBMIT')  return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">Resubmit</span>;
+  return null;
+}
+
 function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
@@ -172,6 +179,7 @@ function SpecialApproverForm4Content() {
   const [fbp, setFbp] = useState('');
   const [clusterHead, setClusterHead] = useState('');
   const [docFiles, setDocFiles] = useState<Record<string, AttachedFile[]>>({});
+  const [docStatuses, setDocStatuses] = useState<Record<string, string>>({});
   const [comments, setComments] = useState<CommentEntry[]>([]);
   const [commentInput, setCommentInput] = useState('');
   const [uploadPopup, setUploadPopup] = useState<{ docKey: string; docLabel: string } | null>(null);
@@ -237,12 +245,15 @@ function SpecialApproverForm4Content() {
         }
         if (s.documents?.length) {
           const loaded: Record<string, AttachedFile[]> = {};
+          const statuses: Record<string, string> = {};
           s.documents.forEach((doc: any) => {
+            statuses[doc.label] = doc.status || 'NONE';
             if (doc.fileUrl) {
               loaded[doc.label] = [{ id: doc.id, name: doc.label, size: 0, file: { name: doc.label, size: 0 } as File, fileUrl: doc.fileUrl }];
             }
           });
           setDocFiles(loaded);
+          setDocStatuses(statuses);
         }
       })
       .catch(err => console.error('Failed to load submission:', err));
@@ -491,16 +502,21 @@ function SpecialApproverForm4Content() {
                 </div>
               ) : allDocKeys.map((key, i) => {
                 const files = docFiles[key] || [];
+                const docStatus = docStatuses[key] || 'NONE';
                 return (
-                  <div key={key} className="flex items-center justify-between rounded-lg px-3 py-2 bg-emerald-50 border border-emerald-200">
+                  <div key={key} className={`flex items-center justify-between rounded-lg px-3 py-2 border cursor-pointer transition-all
+                    ${docStatus === 'ATTENTION' ? 'bg-yellow-50 border-yellow-200 hover:bg-yellow-100' :
+                      docStatus === 'RESUBMIT'  ? 'bg-red-50 border-red-200 hover:bg-red-100' :
+                      'bg-emerald-50 border-emerald-200 hover:bg-emerald-100'}`}>
                     <div className="flex-1 mr-2 min-w-0">
                       <span className="text-[11px] text-slate-600 leading-tight block">
                         <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{key}
                       </span>
-                      <span className="text-[10px] text-emerald-600 font-semibold">{files.length} file{files.length > 1 ? 's' : ''}</span>
+                      <span className="text-[10px] text-emerald-600 font-semibold">{files.length} file{files.length > 1 ? 's' : ''} attached · click to view</span>
+                      {docStatus !== 'NONE' && <StatusBadge status={docStatus} />}
                     </div>
                     <button onClick={() => setUploadPopup({ docKey: key, docLabel: key })} className="flex-shrink-0">
-                      <Eye className="w-4 h-4 text-[#1A438A]" />
+                      <Eye className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                     </button>
                   </div>
                 );

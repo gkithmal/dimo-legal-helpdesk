@@ -8,8 +8,9 @@ import { ROUTES } from '@/lib/routes';
 import {
   X, Home, Lightbulb, Search, Settings, User,
   ArrowLeft, FileText, CheckCircle2, Paperclip, AlertCircle,
-  Send, Loader2, Calendar, ChevronDown,
+  Send, Loader2, ChevronDown,
 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -177,16 +178,15 @@ function DateField({ value, onChange, disabled, hasError }: {
   value: string; onChange: (v: string) => void; disabled?: boolean; hasError?: boolean;
 }) {
   return (
-    <div className="relative">
-      <input type="date" value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}
-        className={`w-full px-3.5 py-2.5 rounded-lg border text-sm transition-all pr-10
-          focus:outline-none focus:ring-2 focus:ring-[#1A438A]/10 focus:border-[#1A438A]
-          disabled:bg-slate-50 disabled:cursor-not-allowed
-          ${hasError ? 'border-red-300 bg-red-50' : 'border-slate-200 bg-white'}`}
-      />
-      <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-    </div>
+    <DatePicker value={value} onChange={onChange} disabled={disabled} hasError={hasError} />
   );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'OK')        return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">OK</span>;
+  if (status === 'ATTENTION') return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">Attention</span>;
+  if (status === 'RESUBMIT')  return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">Resubmit</span>;
+  return null;
 }
 
 function SectionDivider({ children }: { children: React.ReactNode }) {
@@ -344,7 +344,7 @@ function Form2PageContent() {
   const [commentInput, setCommentInput] = useState('');
   const [showInstructions, setShowInstructions] = useState(false);
   const [instructionsText, setInstructionsText] = useState('');
-  const [formConfigDocs, setFormConfigDocs] = useState<{label: string; type: string}[]>([]);
+  const [formConfigDocs, setFormConfigDocs] = useState<{id: string; label: string; type: string; isRequired: boolean}[]>([]);
 
   // ── Form fields ──
   const [contactPerson, setContactPerson] = useState('');
@@ -392,6 +392,7 @@ function Form2PageContent() {
   // ── Documents ──
   const [docFiles, setDocFiles] = useState<Record<string, AttachedFile[]>>({});
   const [docIdMap, setDocIdMap] = useState<Record<string, string>>({});
+  const [docStatuses, setDocStatuses] = useState<Record<string, string>>({});
   const docFilesRef = useRef<Record<string, AttachedFile[]>>({});
   const [uploadPopup, setUploadPopup] = useState<{ docKey: string; docLabel: string; docId: string } | null>(null);
 
@@ -482,14 +483,13 @@ function Form2PageContent() {
         if (s.documents?.length) {
           const loaded: Record<string, AttachedFile[]> = {};
           const idMap: Record<string, string> = {};
+          const statuses: Record<string, string> = {};
           s.documents.forEach((doc: any) => {
             idMap[doc.label] = doc.id;
+            statuses[doc.label] = doc.status || 'NONE';
             if (doc.fileUrl) loaded[doc.label] = [{ id: doc.id, name: doc.label, size: 0, file: { name: doc.label, size: 0 } as File, fileUrl: doc.fileUrl }];
-
-
-
           });
-          setDocFiles(loaded); setDocIdMap(idMap);
+          setDocFiles(loaded); setDocIdMap(idMap); setDocStatuses(statuses);
         }
         const fmt = (d: string) => d ? new Date(d).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
         setLog([
@@ -621,6 +621,18 @@ function Form2PageContent() {
             })
           )
         );
+
+        // Re-link already-uploaded files (fileUrl set) to new submission doc IDs
+        for (const [docKey, files] of Object.entries(docFilesRef.current)) {
+          for (const f of files as AttachedFile[]) {
+            if (f.fileUrl && docLabelToId[docKey]) {
+              await fetch(`/api/submissions/${newSubId}`, {
+                method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ documentId: docLabelToId[docKey], fileUrl: f.fileUrl, documentStatus: 'UPLOADED' }),
+              });
+            }
+          }
+        }
       }
 
       if (mode === 'resubmit' && submissionId) {
@@ -667,11 +679,15 @@ function Form2PageContent() {
   // Legacy alias used below
   const canUploadDocs = canAddDocs;
 
-  // Dynamic docs — always show all 23 common docs, union type-specific on lessor selection
+  // Dynamic docs — from settings if configured, else fallback to hardcoded
   const selectedTypes = [...new Set(lessorParties.map((p) => p.type).filter(Boolean))];
-  const FORM2_DOCS: { label: string; mandatory: boolean }[] = FORM2_DOCS_ALL
-    .filter((d) => d.types.includes('all') || selectedTypes.some((t) => d.types.includes(t)))
-    .map((d) => ({ label: d.label, mandatory: !!d.mandatory }));
+  const FORM2_DOCS: { label: string; mandatory: boolean }[] = formConfigDocs.length > 0
+    ? formConfigDocs
+        .filter(d => d.type === 'Common' || selectedTypes.some(t => t === d.type || t.replace('-', ' ') === d.type.replace('-', ' ')))
+        .map(d => ({ label: d.label, mandatory: d.isRequired }))
+    : FORM2_DOCS_ALL
+        .filter((d) => d.types.includes('all') || selectedTypes.some((t) => d.types.includes(t)))
+        .map((d) => ({ label: d.label, mandatory: !!d.mandatory }));
 
   return (
     <div className="min-h-screen flex bg-[#f0f4f9]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -793,12 +809,12 @@ function Form2PageContent() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <FieldLabel required>NIC No</FieldLabel>
-                  <TextField value={nicNo} onChange={(v) => setNicNo(v.replace(/[^a-zA-Z0-9]/g, ''))} placeholder="e.g. 978657354V" disabled={isReadOnly} hasError={hasError('nic')} />
+                  <TextField value={nicNo} onChange={(v) => setNicNo(v.replace(/[^a-zA-Z0-9]/g, ''))} placeholder="Enter NIC number..." disabled={isReadOnly} hasError={hasError('nic')} />
                   <FieldError message={hasError('nic') ? 'NIC No is required' : undefined} />
                 </div>
                 <div>
                   <FieldLabel>VAT Reg. No.</FieldLabel>
-                  <TextField value={vatRegNo} onChange={setVatRegNo} placeholder="e.g. 02009" disabled={isReadOnly} />
+                  <TextField value={vatRegNo} onChange={setVatRegNo} placeholder="Enter VAT reg. no..." disabled={isReadOnly} />
                 </div>
               </div>
 
@@ -821,11 +837,11 @@ function Form2PageContent() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <FieldLabel>Premises bearing Asst. No</FieldLabel>
-                  <TextField value={premisesAssetNo} onChange={setPremisesAssetNo} placeholder="e.g. 00005" disabled={isReadOnly} />
+                  <TextField value={premisesAssetNo} onChange={setPremisesAssetNo} placeholder="Enter asset no..." disabled={isReadOnly} />
                 </div>
                 <div>
                   <FieldLabel required>Period of Lease</FieldLabel>
-                  <TextField value={periodOfLease} onChange={setPeriodOfLease} placeholder="e.g. 3 m" disabled={isReadOnly} hasError={hasError('period of lease')} />
+                  <TextField value={periodOfLease} onChange={setPeriodOfLease} placeholder="Enter period of lease..." disabled={isReadOnly} hasError={hasError('period of lease')} />
                   <FieldError message={hasError('period of lease') ? 'Period of Lease is required' : undefined} />
                 </div>
               </div>
@@ -857,7 +873,7 @@ function Form2PageContent() {
                   <div className="flex items-center gap-2">
                     <span className="text-sm text-slate-500">Extent</span>
                     <input type="text" value={assetExtent} onChange={e => setAssetExtent(e.target.value)}
-                      placeholder="e.g. 20 P" disabled={isReadOnly}
+                      placeholder="Enter extent..." disabled={isReadOnly}
                       className="w-20 px-2 py-1.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A]" />
                   </div>
                 </div>
@@ -897,7 +913,7 @@ function Form2PageContent() {
                 </div>
                 <div>
                   <FieldLabel>Period</FieldLabel>
-                  <TextField value={deductiblePeriod} onChange={setDeductiblePeriod} placeholder="e.g. 3 m" disabled={isReadOnly} />
+                  <TextField value={deductiblePeriod} onChange={setDeductiblePeriod} placeholder="Enter period..." disabled={isReadOnly} />
                 </div>
               </div>
 
@@ -911,14 +927,14 @@ function Form2PageContent() {
               {/* Electricity, Water & Phone */}
               <div>
                 <FieldLabel required>Electricity, Water &amp; Phone</FieldLabel>
-                <TextField value={electricityWaterPhone} onChange={setElectricityWaterPhone} placeholder="e.g. N/A" disabled={isReadOnly} hasError={hasError('electricity')} />
+                <TextField value={electricityWaterPhone} onChange={setElectricityWaterPhone} placeholder="Enter details..." disabled={isReadOnly} hasError={hasError('electricity')} />
                 <FieldError message={hasError('electricity') ? 'Electricity, Water & Phone is required' : undefined} />
               </div>
 
               {/* Previous Agreement No */}
               <div>
                 <FieldLabel>If a Renewal, Previous Agreement No</FieldLabel>
-                <TextField value={previousAgreementNo} onChange={setPreviousAgreementNo} placeholder="e.g. N/A" disabled={isReadOnly} />
+                <TextField value={previousAgreementNo} onChange={setPreviousAgreementNo} placeholder="Enter previous agreement no..." disabled={isReadOnly} />
               </div>
 
               {/* Date of Principal Agreement */}
@@ -1031,15 +1047,15 @@ function Form2PageContent() {
                 const files = docFiles[doc] || [];
                 const hasFiles = files.length > 0;
                 const isMissingMandatory = mandatory && !hasFiles && submitted;
+                const docStatus = docStatuses[doc] || 'NONE';
                 return (
                   <div key={doc} className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
-                    ${hasFiles
-                      ? 'bg-emerald-50 border-emerald-200'
-                      : isMissingMandatory
-                        ? 'bg-red-50 border-red-200'
-                        : mandatory
-                          ? 'bg-orange-50 border-orange-200'
-                          : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
+                    ${docStatus === 'ATTENTION' ? 'bg-yellow-50 border-yellow-200' :
+                      docStatus === 'RESUBMIT'  ? 'bg-red-50 border-red-200' :
+                      hasFiles ? 'bg-emerald-50 border-emerald-200'
+                      : isMissingMandatory ? 'bg-red-50 border-red-200'
+                      : mandatory  ? 'bg-orange-50 border-orange-200'
+                      : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
                     <div className="flex-1 mr-2 min-w-0">
                       <span className="text-[11px] text-slate-600 leading-tight block">
                         <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>
@@ -1048,6 +1064,7 @@ function Form2PageContent() {
                       </span>
                       {hasFiles && <span className="text-[10px] text-emerald-600 font-semibold">{files.length} file{files.length > 1 ? 's' : ''} attached</span>}
                       {isMissingMandatory && <span className="text-[10px] text-red-500 font-semibold">Required — please upload</span>}
+                      {docStatus !== 'NONE' && <StatusBadge status={docStatus} />}
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {hasFiles && (

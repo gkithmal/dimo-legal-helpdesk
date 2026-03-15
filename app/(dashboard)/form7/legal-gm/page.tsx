@@ -222,7 +222,7 @@ function Form7LegalGMContent() {
   const [selected, setSelected] = useState<Submission | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
-  const [legalOfficers, setLegalOfficers] = useState<{ name: string; email: string }[]>([]);
+  const [legalOfficers, setLegalOfficers] = useState<{ id: string; name: string; email: string }[]>([]);
   const [selectedOfficer, setSelectedOfficer] = useState('');
   const [showReassign, setShowReassign] = useState(false);
   const [comment, setComment] = useState('');
@@ -256,7 +256,7 @@ function Form7LegalGMContent() {
     fetch('/api/users')
       .then((r) => r.json())
       .then((data) => {
-        setLegalOfficers((data.data || []).filter((u: any) => u.role === 'LEGAL_OFFICER').map((u: any) => ({ name: u.name, email: u.email })));
+        setLegalOfficers((data.data || []).filter((u: any) => u.role === 'LEGAL_OFFICER').map((u: any) => ({ id: u.id, name: u.name, email: u.email })));
       }).catch(() => {});
   }, []);
 
@@ -287,7 +287,7 @@ function Form7LegalGMContent() {
           comment,
           approverName: session?.user?.name,
           approverEmail: session?.user?.email,
-          assignedOfficer: officerObj?.email || selectedOfficer,
+          assignedOfficer: officerObj?.id || officerObj?.email || selectedOfficer,
           // No specialApprovers for Form 7
         }),
       });

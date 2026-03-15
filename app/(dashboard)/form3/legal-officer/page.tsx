@@ -8,8 +8,9 @@ import { ROUTES } from '@/lib/routes';
 import {
   X, LogOut, Home, Lightbulb, Search, Settings, User,
   ArrowLeft, CheckCircle2, FileText, Clock, XCircle,
-  RotateCcw, Send, Paperclip, AlertCircle, Loader2, ChevronDown, Calendar,
+  RotateCcw, Send, Paperclip, AlertCircle, Loader2, ChevronDown,
 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ApprovalStatus = 'PENDING' | 'APPROVED' | 'SENT_BACK' | 'CANCELLED';
@@ -30,7 +31,7 @@ type Submission = {
   scopeOfAgreement: string; term: string; value: string;
   remarks?: string; initiatorComments?: string;
   assignedLegalOfficer?: string; legalOfficerName?: string;
-  courtOfficerId?: string; loStage?: string;
+  courtOfficerId?: string; courtOfficerName?: string; loStage?: string;
   isResubmission?: boolean;
   f3GmcApprovalNo?: string; f3CaseNo?: string; f3CaseFillingDate?: string;
   f3Council?: string; f3Court?: string; f3Remarks?: string;
@@ -216,17 +217,18 @@ type OfficialFields = {
   council: string; court: string; remarks: string;
 };
 
-function OfficialUseModal({ submissionNo, initialFields, onSave, onComplete, onClose, loading }: {
+function OfficialUseModal({ submissionNo, initialFields, onSave, onComplete, onClose, loading, readOnly = false }: {
   submissionNo: string;
   initialFields: OfficialFields;
   onSave: (fields: OfficialFields) => Promise<void>;
   onComplete: (fields: OfficialFields) => Promise<void>;
   onClose: () => void;
   loading: boolean;
+  readOnly?: boolean;
 }) {
   const [fields, setFields] = useState<OfficialFields>(initialFields);
   const [innerModal, setInnerModal] = useState<null | 'saveConfirm' | 'saveSuccess' | 'jobConfirm' | 'jobSuccess'>(null);
-  const set = (k: keyof OfficialFields, v: string) => setFields(p => ({ ...p, [k]: v }));
+  const set = (k: keyof OfficialFields, v: string) => { if (!readOnly) setFields(p => ({ ...p, [k]: v })); };
 
   if (innerModal === 'saveSuccess') return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -288,52 +290,57 @@ function OfficialUseModal({ submissionNo, initialFields, onSave, onComplete, onC
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
       <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
-        <div className="px-6 py-4 text-white font-bold text-sm" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
-          Official Use Only (Legal Officer should enter)
+        <div className="px-6 py-4 text-white font-bold text-sm flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>
+          <span>Official Use Only (Legal Officer should enter)</span>
+          {readOnly && <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500 px-2 py-0.5 rounded-full">Completed</span>}
         </div>
         <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+          {readOnly && (
+            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+              <span className="text-xs font-semibold text-emerald-700">This request has been completed — data cannot be modified.</span>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">GMC Approval No</label>
-              <input value={fields.gmcApprovalNo} onChange={e => set('gmcApprovalNo', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+              <input value={fields.gmcApprovalNo} onChange={e => set('gmcApprovalNo', e.target.value)} readOnly={readOnly}
+                className={`w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none ${readOnly ? 'bg-slate-100 cursor-default' : 'bg-slate-50 focus:border-[#1A438A]'}`} />
             </div>
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Case No</label>
-              <input value={fields.caseNo} onChange={e => set('caseNo', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+              <input value={fields.caseNo} onChange={e => set('caseNo', e.target.value)} readOnly={readOnly}
+                className={`w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none ${readOnly ? 'bg-slate-100 cursor-default' : 'bg-slate-50 focus:border-[#1A438A]'}`} />
             </div>
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Case Filling Date</label>
-              <div className="relative">
-                <input type="date" value={fields.caseFillingDate} onChange={e => set('caseFillingDate', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <DatePicker value={fields.caseFillingDate} onChange={(v) => set('caseFillingDate', v)} disabled={readOnly} />
             </div>
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Council</label>
-              <input value={fields.council} onChange={e => set('council', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+              <input value={fields.council} onChange={e => set('council', e.target.value)} readOnly={readOnly}
+                className={`w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none ${readOnly ? 'bg-slate-100 cursor-default' : 'bg-slate-50 focus:border-[#1A438A]'}`} />
             </div>
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Court</label>
-              <input value={fields.court} onChange={e => set('court', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+              <input value={fields.court} onChange={e => set('court', e.target.value)} readOnly={readOnly}
+                className={`w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none ${readOnly ? 'bg-slate-100 cursor-default' : 'bg-slate-50 focus:border-[#1A438A]'}`} />
             </div>
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Remarks</label>
-              <input value={fields.remarks} onChange={e => set('remarks', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+              <input value={fields.remarks} onChange={e => set('remarks', e.target.value)} readOnly={readOnly}
+                className={`w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none ${readOnly ? 'bg-slate-100 cursor-default' : 'bg-slate-50 focus:border-[#1A438A]'}`} />
             </div>
           </div>
         </div>
         <div className="flex gap-3 px-6 pb-5 pt-3 border-t border-slate-100">
-          <button onClick={onClose} disabled={loading} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-[#17293E] text-[#17293E] hover:bg-[#17293E] hover:text-white transition-all disabled:opacity-50">Back</button>
-          <button onClick={() => setInnerModal('saveConfirm')} disabled={loading}
-            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>Save and Close</button>
-          <button onClick={() => setInnerModal('jobConfirm')} disabled={loading}
-            className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>Job Completion</button>
+          <button onClick={onClose} disabled={loading} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-[#17293E] text-[#17293E] hover:bg-[#17293E] hover:text-white transition-all disabled:opacity-50">{readOnly ? 'Back' : 'Close'}</button>
+          {!readOnly && <>
+            <button onClick={() => setInnerModal('saveConfirm')} disabled={loading}
+              className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #1A438A, #1e5aad)' }}>Save and Close</button>
+            <button onClick={() => setInnerModal('jobConfirm')} disabled={loading}
+              className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all" style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>Job Completion</button>
+          </>}
         </div>
       </div>
     </div>
@@ -402,11 +409,6 @@ function LegalOfficerForm3PageContent() {
   const currentUserName = session?.user?.name ?? '';
   const router = useRouter();
   const searchParams = useSearchParams();
-  if (status === 'loading') return null;
-  if (status === 'authenticated' && !['LEGAL_OFFICER'].includes(session?.user?.role as string)) {
-    router.replace('/');
-    return null;
-  }
   const submissionId = searchParams.get('id');
   const [showSignOut, setShowSignOut] = useState(false);
 
@@ -445,15 +447,13 @@ function LegalOfficerForm3PageContent() {
       const s: Submission = data.data;
       setSubmission(s);
       if (s.courtOfficerId) {
-        const co = courtOfficers.find(o => o.id === s.courtOfficerId);
-        if (co) setAssignedCourtOfficer(co);
-        else setAssignedCourtOfficer({ id: s.courtOfficerId, name: 'Assigned', email: '' });
+        setAssignedCourtOfficer({ id: s.courtOfficerId, name: s.courtOfficerName || 'Assigned', email: '' });
       }
       const seedLog: LogEntry[] = [
         { id: 0, actor: 'System', role: 'System', action: 'Submission created', timestamp: fmtDate((s as unknown as Record<string, string>).createdAt) },
         ...s.approvals.filter((a: ApproverRecord) => a.actionDate).map((a: ApproverRecord, i: number) => ({
           id: i + 1, actor: a.approverName || a.role, role: ROLE_LABEL[a.role] ?? a.role,
-          action: a.status === 'APPROVED' ? 'Approved' : a.status === 'SENT_BACK' ? 'Sent Back' : 'Cancelled',
+          action: ({'APPROVED':'Approved','OK_TO_PROCEED':'OK to Proceed','SENT_BACK':'Sent Back','CANCELLED':'Cancelled','SUBMIT_TO_LEGAL_GM':'Submitted to Legal GM','SUBMIT_TO_LEGAL_OFFICER':'Submitted to Legal Officer','RETURNED_TO_INITIATOR':'Returned to Initiator','COMPLETED':'Completed'} as Record<string,string>)[a.status as string] ?? a.status,
           comment: a.comment ?? undefined, timestamp: fmtDate(a.actionDate),
         })),
       ];
@@ -468,6 +468,12 @@ function LegalOfficerForm3PageContent() {
   }, [submissionId]);
 
   useEffect(() => { loadSubmission(); }, [loadSubmission]);
+
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && !['LEGAL_OFFICER'].includes(session?.user?.role as string)) {
+    router.replace('/');
+    return null;
+  }
 
   const callApproveAPI = async (action: string, extra?: Record<string, unknown>) => {
     if (!submissionId) return;
@@ -956,14 +962,28 @@ function LegalOfficerForm3PageContent() {
 
             {/* Stage: Finalization */}
             {loStage === 'FINALIZATION' && (
-              <div className="flex gap-2">
-                <button onClick={() => router.push(ROUTES.HOME)} disabled={isActing}
-                  className="flex items-center gap-1.5 py-3 px-4 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all disabled:opacity-50">
-                  <ArrowLeft className="w-4 h-4" />Back
-                </button>
-                <button onClick={() => setShowOfficialUse(true)} disabled={isActing}
-                  className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
-                  style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>Next</button>
+              <div className="flex flex-col gap-2">
+                {submission.status === 'COMPLETED' ? (
+                  <>
+                    <div className="w-full py-3 rounded-xl font-bold text-sm text-center bg-emerald-50 border-2 border-emerald-200 text-emerald-700">
+                      ✓ This request has been completed
+                    </div>
+                    <button onClick={() => setShowOfficialUse(true)}
+                      className="w-full py-2.5 rounded-xl font-bold text-sm text-[#1A438A] border-2 border-[#1A438A]/30 hover:bg-[#EEF3F8] transition-all">
+                      View Job Completion Details
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex gap-2">
+                    <button onClick={() => router.push(ROUTES.HOME)} disabled={isActing}
+                      className="flex items-center gap-1.5 py-3 px-4 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all disabled:opacity-50">
+                      <ArrowLeft className="w-4 h-4" />Back
+                    </button>
+                    <button onClick={() => setShowOfficialUse(true)} disabled={isActing}
+                      className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70"
+                      style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>Next</button>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -989,6 +1009,7 @@ function LegalOfficerForm3PageContent() {
           onComplete={async (fields) => { await handleCompleteOfficialUse(fields); setShowOfficialUse(false); router.push(ROUTES.HOME); }}
           onClose={() => setShowOfficialUse(false)}
           loading={isActing}
+          readOnly={submission.status === 'COMPLETED'}
         />
       )}
 

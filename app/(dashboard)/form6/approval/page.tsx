@@ -459,7 +459,7 @@ function Form6ApprovalPageContent() {
   };
 
   // ── Derived ──
-  const approvals = submission?.approvals ?? [];
+  const approvals = Object.values((submission?.approvals ?? []).reduce<Record<string, NonNullable<typeof submission>['approvals'][0]>>((acc, a) => { acc[a.role] = a; return acc; }, {}));
   const myRecord = approvals.find((a) => a.role === currentUserRole);
   const alreadyActed = myRecord?.status !== 'PENDING';
   const overallStatus = getOverallStatus(approvals);

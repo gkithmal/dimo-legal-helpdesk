@@ -1,0 +1,1 @@
+bash tests/form9-qa/test_form9_full_qa.sh

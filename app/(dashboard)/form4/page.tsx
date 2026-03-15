@@ -1,71 +1,34 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback, Suspense } from 'react';
+import { useState, useEffect, useRef, Suspense, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import {
   Home, Lightbulb, Search, Settings, User,
-  FileText, Paperclip, CheckCircle2, X, Upload, File,
+  Paperclip, CheckCircle2, X, Upload, File,
   Eye, Trash2, Send, AlertCircle, ArrowLeft, Loader2, Car,
 } from 'lucide-react';
 import NotificationBell from '@/components/shared/NotificationBell';
 import { ROUTES } from '@/lib/routes';
+import { DatePicker } from '@/components/ui/date-picker';
 
 type FormMode = 'new' | 'view' | 'resubmit' | 'draft';
 
 interface AttachedFile {
   id: string; name: string; size: number; file: File; fileUrl?: string;
 }
-
 interface CommentEntry {
   id: number; author: string; text: string; time: string;
 }
 
-// ─── Form 4 specific constants ────────────────────────────────────────────────
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const COMPANY_CODES = [
   'DM01 - DIMO PLC', 'DM02 - DIMO Subsidiaries', 'DM03 - DIMO Auto', 'DM04 - DIMO Power',
 ];
 
-const VEHICLE_MAKES = ['Toyota', 'Honda', 'Nissan', 'TATA', 'Suzuki', 'Mitsubishi', 'Isuzu', 'BMW', 'Mercedes', 'Ford'];
-const VEHICLE_MODELS = ['Corolla', 'Prius', 'Land Cruiser', 'Hilux', 'Curvv', 'Swift', 'Alto', 'Montero', 'Axio', 'Vezel'];
-const TERM_OPTIONS = ['Annual', 'Monthly', 'Quarterly', 'Bi-Annual', '6 Months', 'Other'];
-
-const SAP_COST_CENTERS = [
-  '000003999 - IT Department', '000004001 - Finance Department', '000004002 - HR Department',
-  '000004003 - Operations Department', '000004004 - Legal Department',
-];
-
-// Base docs always required for Form 4
-const BASE_DOCS = [
-  'Certificate of Registration of Motor Vehicle',
-  'Revenue License',
-  'Vehicle Insurance Cover',
-
-];
-
-// Owner-type specific docs
-const OWNER_TYPE_DOCS: Record<string, string[]> = {
-  Company: [
-    'National Identity Card of the Owner',
-    'Article of Association', 'Company Registration Certificate',
-    'Registered Address of the Company', 'Form 20',
-  ],
-  Partnership: [
-    'National Identity Card of the Owner',
-    'Partnership registration certificate',
-    'NIC/passport copies of every partner',
-    'Other (Partnership)',
-  ],
-  'Sole proprietorship': [
-    'National Identity Card of the Owner',
-    'NIC/passport of the sole proprietor',
-    'Business registration certificate',
-    'Other (Sole proprietorship)',
-  ],
-  Individual: ['NIC', 'Other (Individual)'],
-};
+const OWNER_TYPES = ['Company', 'Individual', 'Partnership', 'Sole proprietorship'];
 
 const WORKFLOW_STEPS = [
   { label: 'Form\nSubmission' },
@@ -76,23 +39,22 @@ const WORKFLOW_STEPS = [
   { label: 'Ready to\nCollect' },
 ];
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function generateSubmissionId(): string {
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, '0');
-  const datePart = `${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  const seq = String(Math.floor(Math.random() * 999) + 1).padStart(3, '0');
-  return `LHD_${datePart}_${seq}`;
+  return `LHD_${now.getFullYear()}${pad(now.getMonth()+1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}_${String(now.getMilliseconds()).padStart(3,'0')}`;
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+function fmtSize(b: number) {
+  if (b === 0) return '0 B';
+  const k = 1024, sizes = ['B','KB','MB','GB'];
+  const i = Math.floor(Math.log(b) / Math.log(k));
+  return `${parseFloat((b / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }
 
-function sanitizeText(val: string): string { return val.replace(/[<>]/g, ''); }
-
-// ─── Shared UI components (same as Form 1) ───────────────────────────────────
+// ─── Sub-components ───────────────────────────────────────────────────────────
 
 function FieldLabel({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
@@ -104,97 +66,42 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 
 function FieldError({ message }: { message?: string }) {
   if (!message) return null;
-  return <p className="flex items-center gap-1 text-[11px] text-red-500 mt-1"><AlertCircle className="w-3 h-3 flex-shrink-0" />{message}</p>;
+  return <p className="text-[11px] text-red-500 mt-1 flex items-center gap-1"><AlertCircle className="w-3 h-3" />{message}</p>;
 }
 
-function TextField({ value, onChange, placeholder, disabled = false, hasError = false, type = 'text' }: {
-  value: string; onChange: (v: string) => void; placeholder?: string;
-  disabled?: boolean; hasError?: boolean; type?: string;
-}) {
+function ReadField({ label, value, multiline = false }: { label: string; value: string; multiline?: boolean }) {
   return (
-    <input type={type} value={value} onChange={(e) => onChange(sanitizeText(e.target.value))}
-      placeholder={placeholder} disabled={disabled}
-      className={`w-full px-3.5 py-2.5 rounded-lg border text-sm transition-all duration-150
-        ${disabled ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
-          : hasError ? 'bg-white border-red-400 ring-2 ring-red-400/10 focus:outline-none'
-          : 'bg-white border-slate-200 text-slate-800 hover:border-[#4686B7] focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'
-        }`}
-    />
-  );
-}
-
-function NumericField({ value, onChange, placeholder, disabled = false, prefix }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean; prefix?: string;
-}) {
-  return (
-    <div className="relative">
-      {prefix && <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm font-semibold text-slate-400 select-none pointer-events-none">{prefix}</span>}
-      <input type="text" value={value}
-        onChange={(e) => { const v = e.target.value.replace(/[^\d.,]/g, ''); onChange(v); }}
-        placeholder={placeholder} disabled={disabled}
-        className={`w-full ${prefix ? 'pl-12' : 'px-3.5'} pr-3.5 py-2.5 rounded-lg border text-sm transition-all
-          ${disabled ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
-            : 'bg-white border-slate-200 text-slate-800 hover:border-[#4686B7] focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'
-          }`}
-      />
+    <div>
+      <FieldLabel>{label}</FieldLabel>
+      <div className={`w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700 ${multiline ? 'min-h-[80px] whitespace-pre-wrap' : ''}`}>
+        {value || <span className="text-slate-400 italic">—</span>}
+      </div>
     </div>
   );
 }
 
-function TextAreaField({ value, onChange, placeholder, rows = 3, disabled = false }: {
-  value: string; onChange: (v: string) => void; placeholder?: string; rows?: number; disabled?: boolean;
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'OK')        return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 ml-1">OK</span>;
+  if (status === 'ATTENTION') return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700 ml-1">Attention</span>;
+  if (status === 'RESUBMIT')  return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700 ml-1">Resubmit</span>;
+  return null;
+}
+
+function TextField({ value, onChange, placeholder, disabled, hasError }: {
+  value: string; onChange: (v: string) => void; placeholder?: string; disabled?: boolean; hasError?: boolean;
 }) {
   return (
-    <textarea value={value} onChange={(e) => onChange(sanitizeText(e.target.value))}
-      placeholder={placeholder} rows={rows} disabled={disabled}
-      className={`w-full px-3.5 py-2.5 rounded-lg border text-sm resize-none transition-all
-        ${disabled ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
-          : 'bg-white border-slate-200 text-slate-800 hover:border-[#4686B7] focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'
-        }`}
+    <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} disabled={disabled}
+      className={`w-full px-3.5 py-2.5 rounded-lg border text-sm transition-all duration-150 focus:outline-none
+        ${disabled ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'
+        : hasError ? 'bg-white border-red-400 ring-2 ring-red-400/10'
+        : 'bg-white border-slate-200 text-slate-700 hover:border-[#4686B7] focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'}`}
     />
   );
 }
 
-function SelectField({ value, onChange, options, placeholder, disabled = false, hasError = false }: {
-  value: string; onChange: (v: string) => void; options: string[];
-  placeholder?: string; disabled?: boolean; hasError?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="relative">
-      <button type="button" disabled={disabled} onClick={() => setOpen(!open)}
-        className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border text-sm text-left transition-all
-          ${disabled ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'
-            : hasError ? 'bg-white border-red-400 ring-2 ring-red-400/10'
-            : open ? 'bg-white border-[#1A438A] shadow-sm ring-2 ring-[#1A438A]/10'
-            : 'bg-white border-slate-200 text-slate-700 hover:border-[#4686B7] cursor-pointer'
-          }`}>
-        <span className={value ? 'text-slate-800 font-medium' : 'text-slate-400'}>{value || placeholder || 'Select...'}</span>
-        <svg className={`w-4 h-4 text-slate-400 flex-shrink-0 transition-transform ${open ? 'rotate-180 text-[#1A438A]' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-      {open && !disabled && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute z-20 top-full mt-1.5 w-full bg-white border border-slate-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
-            {options.map((opt) => (
-              <button key={opt} type="button" onClick={() => { onChange(opt); setOpen(false); }}
-                className={`w-full text-left px-3.5 py-2.5 text-sm transition-colors first:rounded-t-xl last:rounded-b-xl
-                  ${value === opt ? 'bg-[#1A438A] text-white font-medium' : 'text-slate-700 hover:bg-[#EEF3F8] hover:text-[#1A438A]'}`}>
-                {opt}
-              </button>
-            ))}
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
-function ComboBox({ value, onChange, options, placeholder, disabled = false, dropUp = false, hasError = false }: {
-  value: string; onChange: (v: string) => void; options: string[];
-  placeholder?: string; disabled?: boolean; dropUp?: boolean; hasError?: boolean;
+function ComboBox({ value, onChange, options, placeholder, disabled = false, hasError = false }: {
+  value: string; onChange: (v: string) => void; options: string[]; placeholder?: string; disabled?: boolean; hasError?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -202,92 +109,56 @@ function ComboBox({ value, onChange, options, placeholder, disabled = false, dro
   const containerRef = useRef<HTMLDivElement>(null);
   const filtered = query.trim() ? options.filter(o => o.toLowerCase().includes(query.toLowerCase())) : options;
   useEffect(() => {
-    const h = (e: MouseEvent) => { if (containerRef.current && !containerRef.current.contains(e.target as Node)) { setOpen(false); setQuery(''); } };
+    const h = (e: MouseEvent) => { if (containerRef.current && !containerRef.current.contains(e.target as Node)) { setOpen(false); setQuery(''); }};
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
   return (
     <div ref={containerRef} className="relative">
-      <div className={`flex items-center border rounded-lg transition-all
-        ${disabled ? 'bg-slate-50 border-slate-200 cursor-not-allowed'
-          : open ? 'bg-white border-[#1A438A] shadow-sm ring-2 ring-[#1A438A]/10'
-          : hasError ? 'bg-white border-red-400 ring-2 ring-red-400/10'
-          : 'bg-white border-slate-200 hover:border-[#4686B7]'
-        }`}>
-        <input ref={inputRef} type="text" value={open ? query : value}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true); if (!e.target.value) onChange(''); }}
-          onFocus={() => { setOpen(true); setQuery(''); }}
-          placeholder={value || placeholder || 'Type to search...'}
+      <div className={`flex items-center border rounded-lg transition-all duration-150
+        ${disabled ? 'bg-slate-50 border-slate-200' : open ? 'bg-white border-[#1A438A] shadow-sm ring-2 ring-[#1A438A]/10' : hasError ? 'bg-white border-red-400 ring-2 ring-red-400/10' : 'bg-white border-slate-200 hover:border-[#4686B7]'}`}>
+        <input ref={inputRef} type="text" value={open ? query : value} onChange={e => { setQuery(e.target.value); setOpen(true); if (!e.target.value) onChange(''); }}
+          onFocus={() => { setOpen(true); setQuery(''); }} placeholder={value || placeholder || 'Type to search...'}
           disabled={disabled}
-          className="flex-1 px-3.5 py-2.5 text-sm bg-transparent focus:outline-none rounded-lg text-slate-800 placeholder:text-slate-400 disabled:cursor-not-allowed disabled:text-slate-400"
-        />
-        {value && !disabled && (
-          <button type="button" onMouseDown={(e) => { e.preventDefault(); onChange(''); setQuery(''); }}
-            className="w-5 h-5 rounded flex items-center justify-center text-slate-300 hover:text-slate-500 mr-1">
-            <X className="w-3 h-3" />
+          className={`flex-1 px-3.5 py-2.5 text-sm bg-transparent focus:outline-none rounded-lg ${disabled ? 'cursor-not-allowed text-slate-400' : 'text-slate-800'} ${!open && value ? 'font-medium' : ''} placeholder:text-slate-400`} />
+        <div className="flex items-center pr-2 gap-0.5">
+          {value && !disabled && <button type="button" onMouseDown={e => { e.preventDefault(); onChange(''); setQuery(''); }} className="w-5 h-5 rounded flex items-center justify-center text-slate-300 hover:text-slate-500"><X className="w-3 h-3" /></button>}
+          <button type="button" disabled={disabled} onMouseDown={e => { e.preventDefault(); if (!disabled) { setOpen(!open); if (!open) inputRef.current?.focus(); }}}
+            className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-[#1A438A] disabled:pointer-events-none">
+            <svg className={`w-4 h-4 transition-transform ${open ? 'rotate-180 text-[#1A438A]' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
           </button>
-        )}
-        <button type="button" disabled={disabled} onMouseDown={(e) => { e.preventDefault(); if (!disabled) setOpen(!open); }}
-          className="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-[#1A438A] mr-2 disabled:pointer-events-none">
-          <svg className={`w-4 h-4 transition-transform ${open ? 'rotate-180 text-[#1A438A]' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        </button>
+        </div>
       </div>
       {open && !disabled && (
-        <div className={`absolute z-30 w-full bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden ${dropUp ? "bottom-full mb-1.5" : "top-full mt-1.5"}`}>
-          <div className="max-h-52 overflow-y-auto">
-            {filtered.length === 0 ? (
-              <div className="px-3.5 py-4 text-center text-sm text-slate-400">No matches found</div>
-            ) : filtered.map((opt) => (
-              <button key={opt} type="button"
-                onMouseDown={(e) => { e.preventDefault(); onChange(opt); setQuery(''); setOpen(false); }}
-                className={`w-full text-left px-3.5 py-2.5 text-sm transition-colors
-                  ${value === opt ? 'bg-[#1A438A] text-white font-medium' : 'text-slate-700 hover:bg-[#EEF3F8] hover:text-[#1A438A]'}`}>
-                {opt}
-              </button>
-            ))}
-          </div>
+        <div className="absolute z-30 w-full bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden top-full mt-1.5 max-h-52 overflow-y-auto">
+          {filtered.length === 0 ? <div className="px-3.5 py-4 text-center text-sm text-slate-400">No matches found</div>
+          : filtered.map(opt => <button key={opt} type="button" onMouseDown={e => { e.preventDefault(); onChange(opt); setQuery(''); setOpen(false); }}
+              className={`w-full text-left px-3.5 py-2.5 text-sm transition-colors ${value === opt ? 'bg-[#1A438A] text-white font-medium' : 'text-slate-700 hover:bg-[#EEF3F8] hover:text-[#1A438A]'}`}>{opt}</button>)}
         </div>
       )}
     </div>
   );
 }
 
-function PanelSection({ title, children, overflowVisible = false }: { title: string; children: React.ReactNode; overflowVisible?: boolean }) {
-  return (
-    <div className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm ${overflowVisible ? 'overflow-visible' : 'overflow-hidden'}`}>
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
-        <div className="w-0.5 h-4 rounded-full bg-[#1A438A]" />
-        <span className="text-[11px] font-bold uppercase tracking-widest text-[#17293E]">{title}</span>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function SectionDivider({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 py-0.5">
-      <div className="h-px flex-1 bg-slate-100" />
-      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{children}</span>
-      <div className="h-px flex-1 bg-slate-100" />
-    </div>
-  );
-}
+// ─── Upload Popup ─────────────────────────────────────────────────────────────
 
 function UploadPopup({ docLabel, files, onAdd, onRemove, onClose, onConfirm, canRemove = true }: {
   docLabel: string; files: AttachedFile[];
-  onAdd: (f: AttachedFile[]) => void; onRemove: (id: string) => void;
-  onClose: () => void; onConfirm?: () => void; canRemove?: boolean;
+  onAdd: (f: AttachedFile[]) => void; onRemove: (id: string) => void; onClose: () => void; onConfirm?: () => void; canRemove?: boolean;
 }) {
   const [dragging, setDragging] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
   const handleFiles = (incoming: FileList | null) => {
     if (!incoming) return;
-    onAdd(Array.from(incoming).map(f => ({ id: `${Date.now()}-${Math.random()}`, name: f.name, size: f.size, file: f })));
+    onAdd(Array.from(incoming).map((f) => ({ id: `${Date.now()}-${Math.random()}`, name: f.name, size: f.size, file: f })));
   };
-  const onDrop = useCallback((e: React.DragEvent) => { e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files); }, []);
+
+  const onDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false); handleFiles(e.dataTransfer.files);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
@@ -302,34 +173,35 @@ function UploadPopup({ docLabel, files, onAdd, onRemove, onClose, onConfirm, can
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition-colors"><X className="w-4 h-4" /></button>
         </div>
-        {canRemove && (
-          <div className="p-5">
-            <div onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
-              onClick={() => inputRef.current?.click()}
-              className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${dragging ? 'border-[#1A438A] bg-[#EEF3F8] scale-[1.01]' : 'border-slate-200 hover:border-[#4686B7] hover:bg-slate-50'}`}>
-              <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 transition-colors ${dragging ? 'bg-[#1A438A]' : 'bg-slate-100'}`}>
-                <Upload className={`w-6 h-6 ${dragging ? 'text-white' : 'text-slate-400'}`} />
-              </div>
-              <p className="text-sm font-semibold text-slate-700 mb-1">{dragging ? 'Drop files here' : 'Drag & drop files here'}</p>
-              <p className="text-[11px] text-slate-400">or click to browse</p>
-              <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
+        <div className="p-5">
+          <div onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onClick={() => inputRef.current?.click()}
+            className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200 ${dragging ? 'border-[#1A438A] bg-[#EEF3F8] scale-[1.01]' : 'border-slate-200 hover:border-[#4686B7] hover:bg-slate-50'}`}>
+            <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 transition-colors ${dragging ? 'bg-[#1A438A]' : 'bg-slate-100'}`}>
+              <Upload className={`w-6 h-6 ${dragging ? 'text-white' : 'text-slate-400'}`} />
             </div>
+            <p className="text-sm font-semibold text-slate-700 mb-1">{dragging ? 'Drop files here' : 'Drag & drop files here'}</p>
+            <p className="text-[11px] text-slate-400">or click to browse from your computer</p>
+            <p className="text-[11px] text-slate-300 mt-2">PDF, Word, Excel, Images — any file type accepted</p>
+            <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
           </div>
-        )}
+        </div>
         {files.length > 0 && (
           <div className="px-5 pb-2">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Attached ({files.length})</p>
             <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {files.map(f => (
+              {files.map((f) => (
                 <div key={f.id} className="flex items-center gap-3 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2.5">
                   <div className="w-8 h-8 rounded-lg bg-[#EEF3F8] flex items-center justify-center flex-shrink-0"><File className="w-4 h-4 text-[#1A438A]" /></div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-700 truncate">{f.name}</p>
-                    <p className="text-[11px] text-slate-400">{formatBytes(f.size)}</p>
+                    <p className="text-[11px] text-slate-400">{fmtSize(f.size)}</p>
                   </div>
-                  <div className="flex items-center gap-1">
-                    <button onClick={() => { const url = f.fileUrl || URL.createObjectURL(f.file); window.open(url, '_blank'); }} className="w-7 h-7 rounded-lg hover:bg-[#EEF3F8] flex items-center justify-center text-slate-400 hover:text-[#1A438A]"><Eye className="w-3.5 h-3.5" /></button>
-                    {canRemove && <button onClick={() => onRemove(f.id)} className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-slate-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>}
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button onClick={() => { const url = f.fileUrl || URL.createObjectURL(f.file); window.open(url, '_blank'); }}
+                      className="w-7 h-7 rounded-lg hover:bg-[#EEF3F8] flex items-center justify-center text-slate-400 hover:text-[#1A438A] transition-colors"><Eye className="w-3.5 h-3.5" /></button>
+                    {canRemove && (
+                      <button onClick={() => onRemove(f.id)} className="w-7 h-7 rounded-lg hover:bg-red-50 flex items-center justify-center text-slate-400 hover:text-red-500 transition-colors"><Trash2 className="w-3.5 h-3.5" /></button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -347,69 +219,92 @@ function UploadPopup({ docLabel, files, onAdd, onRemove, onClose, onConfirm, can
   );
 }
 
-function ValidationModal({ errors, onClose }: { errors: string[]; onClose: () => void }) {
+// ─── View Log Modal ────────────────────────────────────────────────────────────
+
+function ViewLogModal({ log, onClose }: { log: { id: number; actor: string; role: string; action: string; timestamp: string }[]; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-        <div className="flex items-center gap-3 px-6 py-4 bg-red-50 border-b border-red-100">
-          <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0"><AlertCircle className="w-5 h-5 text-red-500" /></div>
-          <div>
-            <h3 className="text-red-700 font-bold text-sm">Required Fields Missing</h3>
-            <p className="text-red-500 text-[11px] mt-0.5">Please fill in all mandatory fields before submitting.</p>
-          </div>
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]">
+        <div className="flex items-center justify-between px-6 py-4" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
+          <span className="text-white font-bold text-base">Workflow Log</span>
+          <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white"><X className="w-4 h-4" /></button>
         </div>
-        <div className="p-5 space-y-2">
-          {errors.map((err, i) => (
-            <div key={i} className="flex items-center gap-2.5 bg-red-50 border border-red-100 rounded-xl px-3 py-2.5">
-              <div className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
-              <span className="text-sm text-red-700 font-medium">{err}</span>
+        <div className="overflow-y-auto flex-1 p-4">
+          {log.length === 0 ? <p className="text-sm text-slate-400 text-center py-8">No log entries yet.</p> : (
+            <div className="relative pl-6">
+              <div className="absolute left-[7px] top-2 bottom-2 w-px bg-slate-200" />
+              {log.map((entry, i) => (
+                <div key={entry.id} className="relative mb-4">
+                  <div className={`absolute -left-6 top-1 w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${i === 0 ? 'bg-slate-400 border-slate-400' : 'bg-[#1A438A] border-[#1A438A]'}`}>
+                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                  </div>
+                  <div className="bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
+                    <div className="flex justify-between items-start gap-2 mb-0.5">
+                      <span className="text-[11px] font-bold text-[#1A438A]">{entry.actor}</span>
+                      <span className="text-[10px] text-slate-400 flex-shrink-0">{entry.timestamp}</span>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-semibold mb-1">{entry.role}</p>
+                    <p className="text-xs text-slate-600 leading-relaxed">{entry.action}</p>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </div>
-        <div className="px-5 pb-5">
-          <button onClick={onClose} className="w-full py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
-            Got it, I'll fix these
-          </button>
+        <div className="p-4 border-t border-slate-100">
+          <button onClick={onClose} className="w-full py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>Close</button>
         </div>
       </div>
     </div>
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Main Page Content ────────────────────────────────────────────────────────
 
-function Form4PageContent() {
-  const [showSignOut, setShowSignOut] = useState(false);
+function Form4Content() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const urlMode = (searchParams.get('mode') as FormMode) ?? 'new';
   const submissionId = searchParams.get('id');
   const mode = urlMode;
-  const router = useRouter();
   const isReadOnly = mode === 'view';
-  const { data: session } = useSession();
 
-  const [submissionNo, setSubmissionNo] = useState('');
-  const [submissionStatus, setSubmissionStatus] = useState('');
-  const [submissionData, setSubmissionData] = useState<any>(null);
-  const [showInstructions, setShowInstructions] = useState(false);
-  const [instructionsText, setInstructionsText] = useState('');
-  const [formConfigDocs, setFormConfigDocs] = useState<{ label: string; type: string }[]>([]);
+  // ── Auth ──
+  useEffect(() => {
+    if (status === 'authenticated' && !['INITIATOR', 'BUM', 'FBP', 'CLUSTER_HEAD', 'SPECIAL_APPROVER'].includes(session?.user?.role as string)) {
+      router.replace('/');
+    }
+    if (status === 'authenticated' && session?.user?.role === 'SPECIAL_APPROVER' && submissionId) {
+      router.replace(`/form4/special-approver?id=${submissionId}`);
+    }
+  }, [status, session, router, submissionId]);
+
+  // ── UI state ──
+  const [showSignOut, setShowSignOut] = useState(false);
+  const [showLog, setShowLog] = useState(false);
+  const [log, setLog] = useState<{ id: number; actor: string; role: string; action: string; timestamp: string }[]>([]);
   const [showSuccess, setShowSuccess] = useState(false);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
   const [showValidation, setShowValidation] = useState(false);
-  const [showBackModal, setShowBackModal] = useState(false);
-  const [uploadPopup, setUploadPopup] = useState<{ docKey: string; docLabel: string; docId: string } | null>(null);
-  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
-  const [docIdMap, setDocIdMap] = useState<Record<string, string>>({});
-  const [docFiles, setDocFiles] = useState<Record<string, AttachedFile[]>>({});
-  const docFilesRef = useRef<Record<string, AttachedFile[]>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
-  const [showLog, setShowLog] = useState(false);
-  const [log, setLog] = useState<{ id: number; actor: string; role: string; action: string; timestamp: string }[]>([]);
+  const [submissionNo, setSubmissionNo] = useState('');
+  const [submissionStatus, setSubmissionStatus] = useState('');
+  const [commentInput, setCommentInput] = useState('');
+  const [comments, setComments] = useState<CommentEntry[]>([]);
 
-  // ── Form 4 fields ──
+  // ── Document state ──
+  const [docFiles, setDocFiles] = useState<Record<string, AttachedFile[]>>({});
+  const [docStatuses, setDocStatuses] = useState<Record<string, string>>({});
+  const [docIdMap, setDocIdMap] = useState<Record<string, string>>({});
+  const [docKeys, setDocKeys] = useState<string[]>([]);
+  const docFilesRef = useRef<Record<string, AttachedFile[]>>({});
+  const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
+  const [viewingDoc, setViewingDoc] = useState<AttachedFile | null>(null);
+  const [uploadPopup, setUploadPopup] = useState<{ docKey: string; docLabel: string; docId: string } | null>(null);
+
+  // ── Form fields ──
   const [companyCode, setCompanyCode] = useState('');
   const [sapCostCenter, setSapCostCenter] = useState('');
   const [ownerType, setOwnerType] = useState('');
@@ -434,7 +329,7 @@ function Form4PageContent() {
   const [reasonForHiring, setReasonForHiring] = useState('');
   const [specialConditions, setSpecialConditions] = useState('');
 
-  // Approver state
+  // ── Approver state ──
   const [bum, setBum] = useState('');
   const [fbp, setFbp] = useState('');
   const [clusterHead, setClusterHead] = useState('');
@@ -442,43 +337,36 @@ function Form4PageContent() {
   const [fbpOptions, setFbpOptions] = useState<string[]>([]);
   const [clusterOptions, setClusterOptions] = useState<string[]>([]);
   const [userIdMap, setUserIdMap] = useState<Record<string, string>>({});
-  const [commentInput, setCommentInput] = useState('');
-  const [comments, setComments] = useState<CommentEntry[]>([]);
+  const [sapCostCenterOptions, setSapCostCenterOptions] = useState<string[]>([]);
 
-  // Load users
+  // ── Load users ──
   useEffect(() => {
-    fetch('/api/users').then(r => r.json()).then(data => {
-      if (!data.success) return;
-      const users = data.data;
+    fetch('/api/users').then(r => r.json()).then(d => {
+      if (!d.success) return;
+      const users: any[] = d.data;
       const idMap: Record<string, string> = {};
       users.forEach((u: any) => { if (u.name) idMap[u.name] = u.id; idMap[u.email] = u.id; });
       setUserIdMap(idMap);
-      const toNames = (role: string) => users.filter((u: any) => u.role === role && u.isActive).map((u: any) => u.name || u.email);
-      setBumOptions(toNames('BUM'));
-      setFbpOptions(toNames('FBP'));
-      setClusterOptions(toNames('CLUSTER_HEAD'));
+      setBumOptions(users.filter((u: any) => u.role === 'BUM' && u.isActive).map((u: any) => u.name || u.email));
+      setFbpOptions(users.filter((u: any) => u.role === 'FBP' && u.isActive).map((u: any) => u.name || u.email));
+      setClusterOptions(users.filter((u: any) => u.role === 'CLUSTER_HEAD' && u.isActive).map((u: any) => u.name || u.email));
     }).catch(() => {});
   }, []);
 
-  // Load form config
+  // ── Load SAP cost centers ──
   useEffect(() => {
-    fetch('/api/settings/forms').then(r => r.json()).then(data => {
-      if (data.success) {
-        const config = data.data.find((c: any) => c.formId === 4);
-        if (config?.instructions) setInstructionsText(config.instructions);
-        if (config?.docs?.length) setFormConfigDocs(config.docs);
-      }
+    fetch('/api/sap-cost-centers').then(r => r.json()).then(d => {
+      if (d.success) setSapCostCenterOptions(d.data.map((c: any) => `${c.code} - ${c.name}`));
     }).catch(() => {});
   }, []);
 
-  // Load submission for view/edit
+  // ── Load submission ──
   useEffect(() => {
     if (mode === 'new' || !submissionId) { setSubmissionNo(generateSubmissionId()); return; }
     fetch(`/api/submissions/${submissionId}`).then(r => r.json()).then(d => {
       if (!d.success) return;
       const s = d.data;
       setSubmissionNo(s.submissionNo);
-      setSubmissionData(s);
       setSubmissionStatus(s.status ?? '');
       setCompanyCode(s.companyCode ?? '');
       setSapCostCenter(s.sapCostCenter ?? '');
@@ -516,76 +404,84 @@ function Form4PageContent() {
       if (s.documents?.length) {
         const loaded: Record<string, AttachedFile[]> = {};
         const idMap: Record<string, string> = {};
+        const statuses: Record<string, string> = {};
+        const keys: string[] = [];
         s.documents.forEach((doc: any) => {
+          keys.push(doc.label);
           idMap[doc.label] = doc.id;
+          statuses[doc.label] = doc.status || 'NONE';
           if (doc.fileUrl) loaded[doc.label] = [{ id: doc.id, name: doc.label, size: 0, file: { name: doc.label, size: 0 } as File, fileUrl: doc.fileUrl }];
         });
         setDocFiles(loaded);
         setDocIdMap(idMap);
+        setDocStatuses(statuses);
+        setDocKeys(keys);
+        docFilesRef.current = loaded;
       }
+      if (s.comments?.length) {
+        setComments(s.comments.map((c: any, i: number) => ({
+          id: i, author: c.authorName, text: c.text,
+          time: new Date(c.createdAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
+        })));
+      }
+      const fmt = (dt: string) => dt ? new Date(dt).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      const statusLabel: Record<string, string> = { APPROVED: 'Approved', OK_TO_PROCEED: 'OK to Proceed', SENT_BACK: 'Sent Back', CANCELLED: 'Cancelled', SUBMIT_TO_LEGAL_GM: 'Submitted to Legal GM', SUBMIT_TO_LEGAL_OFFICER: 'Submitted to Legal Officer', RETURNED_TO_INITIATOR: 'Returned to Initiator', COMPLETED: 'Completed' };
+      const roleLabel: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head', CEO: 'CEO', LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer' };
+      setLog([
+        { id: 0, actor: 'System', role: 'System', action: 'Submission created', timestamp: fmt(s.createdAt) },
+        ...(s.approvals || []).filter((a: any) => a.actionDate).map((a: any, i: number) => ({
+          id: i + 1, actor: a.approverName || a.role, role: roleLabel[a.role] ?? a.role,
+          action: statusLabel[a.status] ?? a.status, timestamp: fmt(a.actionDate),
+        })),
+      ]);
     }).catch(() => {});
   }, [mode, submissionId]);
 
-  // ── Derived: required docs ──
-  const requiredDocs: { label: string; key: string }[] = [];
-  BASE_DOCS.forEach(d => requiredDocs.push({ label: d, key: d }));
-  if (formConfigDocs.length > 0) {
-    formConfigDocs.forEach(doc => {
-      if (doc.type === ownerType || doc.type === 'Common') {
-        if (!requiredDocs.find(d => d.key === doc.label)) requiredDocs.push({ label: doc.label, key: doc.label });
-      }
-    });
-  } else if (ownerType && OWNER_TYPE_DOCS[ownerType]) {
-    OWNER_TYPE_DOCS[ownerType].forEach(d => { if (!requiredDocs.find(r => r.key === d)) requiredDocs.push({ label: d, key: d }); });
-  }
+  // ── Derive doc keys for new submission ──
+  useEffect(() => {
+    if (mode !== 'new') return;
+    const common = ['Certificate of Registration', 'Revenue License', 'Vehicle Insurance Cover'];
+    const byType: Record<string, string[]> = {
+      Company: ['National Identity Card of Owner', 'Article of Association', 'Company Registration Certificate', 'Form 20'],
+      Individual: ['NIC (Individual owner)'],
+      Partnership: ['National Identity Card of Owner', 'Partnership Registration Certificate', 'NIC/passport copies of every partner'],
+      'Sole proprietorship': ['National Identity Card of Owner', 'Business Registration/Sole Proprietorship Certificate'],
+    };
+    const specific = ownerType ? (byType[ownerType] || []) : [];
+    const seen = new Set<string>();
+    const keys: string[] = [];
+    [...common, ...specific].forEach(k => { if (!seen.has(k)) { seen.add(k); keys.push(k); } });
+    setDocKeys(keys);
+  }, [ownerType, mode]);
 
   // ── Validation ──
   const validate = (): string[] => {
-    const errors: string[] = [];
-    if (!companyCode)    errors.push('Company Code (Hirer) is required');
-    if (!sapCostCenter)  errors.push('SAP Cost Center is required');
-    if (!ownerType)      errors.push('Name of Vehicle Owner — Type is required');
-    if (!ownerName.trim()) errors.push('Name of Vehicle Owner — Name is required');
-    if (!contactNo.trim()) errors.push('Contact No is required');
-    if (!vehicleNo.trim()) errors.push('Vehicle No is required');
-    if (!make)           errors.push('Make is required');
-    if (!model)          errors.push('Model is required');
-    if (!chassisNo.trim()) errors.push('Chassis No is required');
-    if (!termOfRent.trim()) errors.push('Term of Rent is required');
-    if (!commencing.trim()) errors.push('Commencing date is required');
-    if (!bum)            errors.push('BUM is required');
-    if (!fbp)            errors.push('FBP is required');
-    if (!clusterHead)    errors.push('Cluster Head is required');
-    return errors;
+    const errs: string[] = [];
+    if (!companyCode)     errs.push('Company Code is required');
+    if (!ownerType)       errs.push('Owner Type is required');
+    if (!ownerName.trim()) errs.push('Owner Name is required');
+    if (!vehicleNo.trim()) errs.push('Vehicle No. is required');
+    if (!make.trim())      errs.push('Make is required');
+    if (!model.trim())     errs.push('Model is required');
+    if (!termOfRent.trim()) errs.push('Term of Rent is required');
+    if (!monthlyRentalExcl.trim()) errs.push('Monthly Rental (Excl. VAT) is required');
+    if (!bum)              errs.push('BUM is required');
+    if (!fbp)              errs.push('FBP is required');
+    if (!clusterHead)      errs.push('Cluster Head is required');
+    return errs;
   };
 
-  const errors = submitted ? validate() : [];
-  const hasError = (field: string) => submitted && errors.some(e => e.toLowerCase().includes(field.toLowerCase()));
+  const hasError = (field: string) => {
+    const map: Record<string, string> = {
+      companyCode: 'Company Code', ownerType: 'Owner Type', ownerName: 'Owner Name',
+      vehicleNo: 'Vehicle No.', make: 'Make', model: 'Model',
+      termOfRent: 'Term of Rent', monthlyRentalExcl: 'Monthly Rental (Excl. VAT)',
+      bum: 'BUM', fbp: 'FBP', clusterHead: 'Cluster Head',
+    };
+    return validationErrors.some(e => e.includes(map[field] || ''));
+  };
 
-  const isTerminalStatus = ['COMPLETED', 'CANCELLED'].includes(submissionStatus);
-  const canUploadDocs = !isTerminalStatus;
-  const canRemoveDocs = !isReadOnly;
-  const currentStep = (() => {
-    if (mode !== 'view') return 0;
-    const loStage = (submissionData as any)?.loStage || '';
-    if (submissionStatus === 'DRAFT') return 0;
-    if (submissionStatus === 'PENDING_APPROVAL' || submissionStatus === 'SENT_BACK') return 1;
-    if (submissionStatus === 'PENDING_LEGAL_GM') return 2;
-    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'ACTIVE' || loStage === 'INITIAL_REVIEW' || loStage === 'ASSIGN_COURT_OFFICER')) return 3;
-    if (submissionStatus === 'PENDING_SPECIAL_APPROVER' && (loStage === 'FINALIZATION' || loStage === 'POST_GM_APPROVAL')) return 4;
-    if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 3;
-    if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 4;
-    if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
-    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 5;
-    return 1;
-  })();
-
-  const scopePayload = () => JSON.stringify({
-    ownerType, ownerName, nicNo, address, contactNo, vehicleNo, make, model, chassisNo,
-    termOfRent, commencing, monthlyRentalExcl, monthlyRentalIncl, refundableDeposit,
-    maxUsage, excessKmRate, workingHours, renewalAgreementNo, agreementDate,
-    reasonForHiring, specialConditions,
-  });
+  const scopePayload = () => JSON.stringify({ ownerType, ownerName, nicNo, address, contactNo, vehicleNo, make, model, chassisNo, termOfRent, commencing, monthlyRentalExcl, monthlyRentalIncl, refundableDeposit, maxUsage, excessKmRate, workingHours, renewalAgreementNo, agreementDate, reasonForHiring, specialConditions });
 
   // ── Submit ──
   const handleSubmitClick = async (asDraft = false) => {
@@ -599,15 +495,14 @@ function Form4PageContent() {
         submissionNo, formId: 4, formName: 'Vehicle Rent Agreement',
         status: asDraft ? 'DRAFT' : 'PENDING_APPROVAL',
         initiatorId: session?.user?.id || '',
-        initiatorName: session?.user?.name || '',
-        companyCode, sapCostCenter,
+        companyCode,
+        sapCostCenter,
         title: 'Vehicle Rent Agreement',
         scopeOfAgreement: scopePayload(),
         term: termOfRent,
-        lkrValue: monthlyRentalIncl || monthlyRentalExcl || '0',
+        lkrValue: monthlyRentalExcl || '0',
         remarks: specialConditions,
         initiatorComments: reasonForHiring,
-        legalOfficerId: '',
         bumId: userIdMap[bum] || bum,
         fbpId: userIdMap[fbp] || fbp,
         clusterHeadId: userIdMap[clusterHead] || clusterHead,
@@ -620,9 +515,11 @@ function Form4PageContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(isDraftEdit ? {
           status: asDraft ? 'DRAFT' : 'PENDING_APPROVAL',
-          companyCode, sapCostCenter, scopeOfAgreement: scopePayload(), term: termOfRent,
-          lkrValue: monthlyRentalIncl || monthlyRentalExcl || '0',
-          remarks: specialConditions, initiatorComments: reasonForHiring,
+          companyCode, sapCostCenter, scopeOfAgreement: scopePayload(),
+          term: termOfRent, remarks: specialConditions, initiatorComments: reasonForHiring,
+          bumId: userIdMap[bum] || bum || undefined,
+          fbpId: userIdMap[fbp] || fbp || undefined,
+          clusterHeadId: userIdMap[clusterHead] || clusterHead || undefined,
         } : payload),
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Server error: ${res.status}`); }
@@ -631,7 +528,6 @@ function Form4PageContent() {
       if (mode === 'resubmit' && submissionId) {
         await fetch(`/api/submissions/${submissionId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'RESUBMITTED' }) });
       }
-      // Upload files
       if (!asDraft && data.data?.id && data.data?.documents?.length) {
         const docLabelToId: Record<string, string> = {};
         data.data.documents.forEach((d: any) => { docLabelToId[d.label] = d.id; });
@@ -652,9 +548,16 @@ function Form4PageContent() {
           }
         }
         await Promise.all(ups);
+        for (const [docKey, files] of Object.entries(docFilesRef.current)) {
+          for (const f of files as AttachedFile[]) {
+            if (f.fileUrl) {
+              const docId = docLabelToId[docKey] || '';
+              if (docId) await fetch(`/api/submissions/${data.data.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentId: docId, fileUrl: f.fileUrl, documentStatus: 'UPLOADED' }) });
+            }
+          }
+        }
       }
-      if (asDraft) { router.push(ROUTES.HOME); }
-      else if (mode === 'resubmit') { router.push(ROUTES.HOME); }
+      if (asDraft || mode === 'resubmit') { router.push(ROUTES.HOME); }
       else { setShowSuccess(true); }
     } catch (err: any) {
       setValidationErrors([err.message || 'Submission failed.']); setShowValidation(true);
@@ -663,9 +566,38 @@ function Form4PageContent() {
 
   const addFilesToDoc = (docKey: string, newFiles: AttachedFile[]) =>
     setDocFiles(prev => { const next = { ...prev, [docKey]: [...(prev[docKey] || []), ...newFiles] }; docFilesRef.current = next; return next; });
-
   const removeFileFromDoc = (docKey: string, fileId: string) =>
-    setDocFiles(prev => ({ ...prev, [docKey]: (prev[docKey] || []).filter(f => f.id !== fileId) }));
+    setDocFiles(prev => { const next = { ...prev, [docKey]: (prev[docKey] || []).filter(f => f.id !== fileId) }; docFilesRef.current = next; return next; });
+
+  const handleFileSelect = (docKey: string, files: FileList | null) => {
+    if (!files) return;
+    const newFiles: AttachedFile[] = Array.from(files).map(f => ({ id: `${Date.now()}-${f.name}`, name: f.name, size: f.size, file: f }));
+    addFilesToDoc(docKey, newFiles);
+  };
+
+  const handlePostComment = () => {
+    if (!commentInput.trim() || !submissionId) return;
+    const newComment: CommentEntry = { id: Date.now(), author: session?.user?.name || 'Me', text: commentInput.trim(), time: new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }) };
+    setComments(prev => [...prev, newComment]);
+    fetch(`/api/submissions/${submissionId}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ authorName: session?.user?.name, authorRole: 'INITIATOR', text: commentInput.trim() }) });
+    setCommentInput('');
+  };
+
+  // ── Step calculation ──
+  const currentStep = (() => {
+    if (!submissionStatus || mode === 'new') return 0;
+    if (['DRAFT', 'SENT_BACK', 'CANCELLED'].includes(submissionStatus)) return 0;
+    if (['PENDING_APPROVAL', 'PENDING_CEO'].includes(submissionStatus)) return 1;
+    if (['PENDING_LEGAL_GM', 'PENDING_SPECIAL_APPROVER'].includes(submissionStatus)) return 2;
+    if (submissionStatus === 'PENDING_LEGAL_OFFICER') return 3;
+    if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 4;
+    if (submissionStatus === 'COMPLETED') return 5;
+    return 2;
+  })();
+
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && session?.user?.role === 'SPECIAL_APPROVER') return null;
+  if (status === 'authenticated' && !['INITIATOR', 'BUM', 'FBP', 'CLUSTER_HEAD'].includes(session?.user?.role as string)) return null;
 
   return (
     <div className="min-h-screen flex bg-[#f0f4f9]" style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -710,14 +642,14 @@ function Form4PageContent() {
                 <div className="w-10 h-10 rounded-xl bg-white/15 flex items-center justify-center"><Car className="w-5 h-5 text-white" /></div>
                 <div>
                   <h1 className="text-white font-bold text-base leading-tight">Vehicle Rent Agreement</h1>
-                  <p className="text-white/50 text-[11px] mt-0.5 font-mono tracking-wide">18/FM/1641/07/04</p>
+                  <p className="text-white/50 text-[11px] mt-0.5 font-mono tracking-wide">16/FM/1641/07/04</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
                 {mode !== 'new' && (
                   <span className={`text-[11px] font-semibold px-3 py-1 rounded-full border backdrop-blur-sm
                     ${mode === 'view' ? 'bg-blue-500/20 text-blue-200 border-blue-400/30' : 'bg-orange-500/20 text-orange-200 border-orange-400/30'}`}>
-                    {mode === 'view' ? 'View Only' : 'Resubmission'}
+                    {mode === 'view' ? 'View Only' : mode === 'draft' ? 'Draft' : 'Resubmission'}
                   </span>
                 )}
                 <div className="bg-white text-[#1A438A] font-bold text-sm px-4 py-2 rounded-xl shadow-lg shadow-black/10">Form 4</div>
@@ -731,212 +663,203 @@ function Form4PageContent() {
               <div className="w-1 h-5 rounded-full bg-[#1A438A]" />
               <span className="text-[11px] font-bold uppercase tracking-widest text-[#17293E]">Submission Details</span>
             </div>
-
             <div className="px-6 py-6 space-y-5">
 
-              {/* Row 1: Initiator (read-only) */}
+              {/* Request by */}
               <div>
-                <FieldLabel required>Initiator</FieldLabel>
+                <FieldLabel>Request by (name)</FieldLabel>
                 <div className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700 font-medium">
                   {session?.user?.name || '—'}
                 </div>
               </div>
 
-              {/* Row 2: Company Code + SAP Cost Centre */}
+              {/* Company & SAP */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <FieldLabel required>Company Code (Hirer)</FieldLabel>
-                  <SelectField value={companyCode} onChange={setCompanyCode} options={COMPANY_CODES}
-                    placeholder="Select company code..." disabled={isReadOnly} hasError={hasError('company code')} />
-                  <FieldError message={hasError('company code') ? 'Company Code is required' : undefined} />
+                  <FieldLabel required>Company Code</FieldLabel>
+                  <ComboBox value={companyCode} onChange={setCompanyCode} options={COMPANY_CODES} placeholder="Select company..." disabled={isReadOnly} hasError={hasError('companyCode')} />
+                  <FieldError message={hasError('companyCode') ? 'Company Code is required' : undefined} />
                 </div>
                 <div>
-                  <FieldLabel required>SAP Cost Centre</FieldLabel>
-                  <ComboBox value={sapCostCenter} onChange={setSapCostCenter} options={SAP_COST_CENTERS}
-                    placeholder="Select cost centre..." disabled={isReadOnly} />
+                  <FieldLabel>SAP Cost Center</FieldLabel>
+                  {isReadOnly ? <ReadField label="" value={sapCostCenter} /> : <ComboBox value={sapCostCenter} onChange={setSapCostCenter} options={sapCostCenterOptions} placeholder="Select cost center..." />}
                 </div>
               </div>
 
-              {/* Name of Vehicle Owner — Type + Name */}
-              <div>
-                <FieldLabel required>Name of Vehicle Owner</FieldLabel>
+              {/* Vehicle Owner */}
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A438A] mb-4">Vehicle Owner Details</p>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <p className="text-[11px] text-slate-400 font-semibold mb-1.5">Type <span className="text-red-400">*</span></p>
-                    <SelectField value={ownerType} onChange={setOwnerType}
-                      options={['Company', 'Partnership', 'Sole proprietorship', 'Individual']}
-                      placeholder="Select type..." disabled={isReadOnly} hasError={hasError('type')} />
-                    <FieldError message={hasError('type') ? 'Owner Type is required' : undefined} />
+                    <FieldLabel required>Owner Type</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={ownerType} /> : (
+                      <select value={ownerType} onChange={e => setOwnerType(e.target.value)}
+                        className={`w-full px-3.5 py-2.5 rounded-lg border text-sm focus:outline-none appearance-none ${hasError('ownerType') ? 'border-red-400 bg-white' : 'border-slate-200 bg-white hover:border-[#4686B7] focus:border-[#1A438A]'}`}>
+                        <option value="">Select type...</option>
+                        {OWNER_TYPES.map(t => <option key={t}>{t}</option>)}
+                      </select>
+                    )}
+                    <FieldError message={hasError('ownerType') ? 'Owner Type is required' : undefined} />
                   </div>
                   <div>
-                    <p className="text-[11px] text-slate-400 font-semibold mb-1.5">Name of the Party <span className="text-red-400">*</span></p>
-                    <TextField value={ownerName} onChange={setOwnerName} placeholder="Enter owner name..." disabled={isReadOnly} hasError={hasError('name')} />
-                    <FieldError message={hasError('name') ? 'Owner Name is required' : undefined} />
+                    <FieldLabel required>Owner Name</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={ownerName} /> : <TextField value={ownerName} onChange={setOwnerName} placeholder="Full name of vehicle owner" hasError={hasError('ownerName')} />}
+                    <FieldError message={hasError('ownerName') ? 'Owner Name is required' : undefined} />
+                  </div>
+                  <div>
+                    <FieldLabel>NIC / Registration No</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={nicNo} /> : <TextField value={nicNo} onChange={setNicNo} placeholder="NIC or business reg. no." />}
+                  </div>
+                  <div>
+                    <FieldLabel>Contact No</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={contactNo} /> : <TextField value={contactNo} onChange={setContactNo} placeholder="Contact number" />}
+                  </div>
+                  <div className="col-span-2">
+                    <FieldLabel>Address</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={address} multiline /> : (
+                      <textarea value={address} onChange={e => setAddress(e.target.value)} rows={2} placeholder="Owner address..."
+                        className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none hover:border-[#4686B7] focus:border-[#1A438A] resize-none" />
+                    )}
                   </div>
                 </div>
               </div>
 
-              {/* NIC No + Address */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <FieldLabel>NIC No</FieldLabel>
-                  <TextField value={nicNo} onChange={setNicNo} placeholder="e.g. 901234567V" disabled={isReadOnly} />
-                </div>
-                <div>
-                  <FieldLabel>Address</FieldLabel>
-                  <TextField value={address} onChange={setAddress} placeholder="Enter address..." disabled={isReadOnly} />
-                </div>
-              </div>
-
-              {/* Contact No */}
-              <div>
-                <FieldLabel required>Contact No</FieldLabel>
-                <TextField value={contactNo} onChange={setContactNo} placeholder="+94XXXXXXXXX" type="tel" disabled={isReadOnly} hasError={hasError('contact')} />
-                <FieldError message={hasError('contact') ? 'Contact No is required' : undefined} />
-              </div>
-
-              <SectionDivider>Vehicle Details</SectionDivider>
-
-              {/* Vehicle No + Make */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <FieldLabel required>Vehicle No</FieldLabel>
-                  <TextField value={vehicleNo} onChange={setVehicleNo} placeholder="e.g. CAM9078" disabled={isReadOnly} hasError={hasError('vehicle no')} />
-                  <FieldError message={hasError('vehicle no') ? 'Vehicle No is required' : undefined} />
-                </div>
-                <div>
-                  <FieldLabel required>Make</FieldLabel>
-                  <SelectField value={make} onChange={setMake} options={VEHICLE_MAKES} placeholder="Select make..." disabled={isReadOnly} hasError={hasError('make')} />
-                  <FieldError message={hasError('make') ? 'Make is required' : undefined} />
+              {/* Vehicle Details */}
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A438A] mb-4">Vehicle Details</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel required>Vehicle No.</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={vehicleNo} /> : <TextField value={vehicleNo} onChange={setVehicleNo} placeholder="e.g. WP CAA 1234" hasError={hasError('vehicleNo')} />}
+                    <FieldError message={hasError('vehicleNo') ? 'Vehicle No. is required' : undefined} />
+                  </div>
+                  <div>
+                    <FieldLabel required>Make</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={make} /> : <TextField value={make} onChange={setMake} placeholder="e.g. Toyota" hasError={hasError('make')} />}
+                    <FieldError message={hasError('make') ? 'Make is required' : undefined} />
+                  </div>
+                  <div>
+                    <FieldLabel required>Model</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={model} /> : <TextField value={model} onChange={setModel} placeholder="e.g. Hilux" hasError={hasError('model')} />}
+                    <FieldError message={hasError('model') ? 'Model is required' : undefined} />
+                  </div>
+                  <div>
+                    <FieldLabel>Chassis No.</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={chassisNo} /> : <TextField value={chassisNo} onChange={setChassisNo} placeholder="Chassis number" />}
+                  </div>
                 </div>
               </div>
 
-              {/* Model + Chassis No */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <FieldLabel required>Model</FieldLabel>
-                  <SelectField value={model} onChange={setModel} options={VEHICLE_MODELS} placeholder="Select model..." disabled={isReadOnly} hasError={hasError('model')} />
-                  <FieldError message={hasError('model') ? 'Model is required' : undefined} />
-                </div>
-                <div>
-                  <FieldLabel required>Chassis No</FieldLabel>
-                  <TextField value={chassisNo} onChange={setChassisNo} placeholder="e.g. TBN456789X123456" disabled={isReadOnly} hasError={hasError('chassis')} />
-                  <FieldError message={hasError('chassis') ? 'Chassis No is required' : undefined} />
-                </div>
-              </div>
-
-              {/* Term of Rent + Commencing */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <FieldLabel required>Term of Rent</FieldLabel>
-                  <SelectField value={termOfRent} onChange={setTermOfRent} options={TERM_OPTIONS} placeholder="Select term..." disabled={isReadOnly} hasError={hasError('term of rent')} />
-                  <FieldError message={hasError('term of rent') ? 'Term of Rent is required' : undefined} />
-                </div>
-                <div>
-                  <FieldLabel required>Commencing</FieldLabel>
-                  <TextField value={commencing} onChange={setCommencing} type="date" placeholder="Select date..." disabled={isReadOnly} hasError={hasError('commencing')} />
-                  <FieldError message={hasError('commencing') ? 'Commencing date is required' : undefined} />
-                </div>
-              </div>
-
-              <SectionDivider>Financial Details</SectionDivider>
-
-              {/* Monthly Rental excl. */}
-              <div>
-                <FieldLabel>Monthly Rental — excluding charges for the chauffeur Rs.</FieldLabel>
-                <NumericField value={monthlyRentalExcl} onChange={setMonthlyRentalExcl} placeholder="0" disabled={isReadOnly} prefix="Rs." />
-              </div>
-
-              {/* Monthly Rental incl. */}
-              <div>
-                <FieldLabel>Monthly Rental — including charges for the chauffeur Rs.</FieldLabel>
-                <NumericField value={monthlyRentalIncl} onChange={setMonthlyRentalIncl} placeholder="0" disabled={isReadOnly} prefix="Rs." />
-              </div>
-
-              {/* Refundable Deposit + Max Usage */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <FieldLabel>Refundable Deposit Rs.</FieldLabel>
-                  <NumericField value={refundableDeposit} onChange={setRefundableDeposit} placeholder="0" disabled={isReadOnly} prefix="Rs." />
-                </div>
-                <div>
-                  <FieldLabel>Maximum usage (km)</FieldLabel>
-                  <NumericField value={maxUsage} onChange={setMaxUsage} placeholder="0" disabled={isReadOnly} />
+              {/* Rental Terms */}
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A438A] mb-4">Rental Terms</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel required>Term of Rent</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={termOfRent} /> : <TextField value={termOfRent} onChange={setTermOfRent} placeholder="e.g. 12 months" hasError={hasError('termOfRent')} />}
+                    <FieldError message={hasError('termOfRent') ? 'Term of Rent is required' : undefined} />
+                  </div>
+                  <div>
+                    <FieldLabel>Commencing Date</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={commencing} /> : <DatePicker value={commencing} onChange={setCommencing} />}
+                  </div>
+                  <div>
+                    <FieldLabel required>Monthly Rental (Excl. VAT)</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={monthlyRentalExcl} /> : <TextField value={monthlyRentalExcl} onChange={setMonthlyRentalExcl} placeholder="Amount in LKR" hasError={hasError('monthlyRentalExcl')} />}
+                    <FieldError message={hasError('monthlyRentalExcl') ? 'Monthly Rental (Excl. VAT) is required' : undefined} />
+                  </div>
+                  <div>
+                    <FieldLabel>Monthly Rental (Incl. VAT)</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={monthlyRentalIncl} /> : <TextField value={monthlyRentalIncl} onChange={setMonthlyRentalIncl} placeholder="Amount in LKR" />}
+                  </div>
+                  <div>
+                    <FieldLabel>Refundable Deposit</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={refundableDeposit} /> : <TextField value={refundableDeposit} onChange={setRefundableDeposit} placeholder="Amount in LKR" />}
+                  </div>
+                  <div>
+                    <FieldLabel>Max Usage (km/month)</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={maxUsage} /> : <TextField value={maxUsage} onChange={setMaxUsage} placeholder="e.g. 3000" />}
+                  </div>
+                  <div>
+                    <FieldLabel>Excess KM Rate</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={excessKmRate} /> : <TextField value={excessKmRate} onChange={setExcessKmRate} placeholder="Rate per excess km" />}
+                  </div>
+                  <div>
+                    <FieldLabel>Working Hours</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={workingHours} /> : <TextField value={workingHours} onChange={setWorkingHours} placeholder="e.g. 8am – 5pm" />}
+                  </div>
                 </div>
               </div>
 
-              {/* Excess km rate + Working hours */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <FieldLabel>Excess km rate (Rs. per km)</FieldLabel>
-                  <NumericField value={excessKmRate} onChange={setExcessKmRate} placeholder="0" disabled={isReadOnly} prefix="Rs." />
+              {/* Additional Information */}
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-[11px] font-bold uppercase tracking-widest text-[#1A438A] mb-4">Additional Information</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <FieldLabel>Renewal Agreement No.</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={renewalAgreementNo} /> : <TextField value={renewalAgreementNo} onChange={setRenewalAgreementNo} placeholder="If renewal, enter ref no." />}
+                  </div>
+                  <div>
+                    <FieldLabel>Agreement Date</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={agreementDate} /> : <DatePicker value={agreementDate} onChange={setAgreementDate} />}
+                  </div>
+                  <div className="col-span-2">
+                    <FieldLabel>Reason for Hiring</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={reasonForHiring} multiline /> : (
+                      <textarea value={reasonForHiring} onChange={e => setReasonForHiring(e.target.value)} rows={3} placeholder="Describe the business purpose..."
+                        className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none hover:border-[#4686B7] focus:border-[#1A438A] resize-none" />
+                    )}
+                  </div>
+                  <div className="col-span-2">
+                    <FieldLabel>Special Conditions / Remarks</FieldLabel>
+                    {isReadOnly ? <ReadField label="" value={specialConditions} multiline /> : (
+                      <textarea value={specialConditions} onChange={e => setSpecialConditions(e.target.value)} rows={3} placeholder="Any special conditions..."
+                        className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-white text-sm focus:outline-none hover:border-[#4686B7] focus:border-[#1A438A] resize-none" />
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <FieldLabel>Working hours (am-pm)</FieldLabel>
-                  <TextField value={workingHours} onChange={setWorkingHours} placeholder="e.g. 8am - 5pm" disabled={isReadOnly} />
-                </div>
-              </div>
-
-              <SectionDivider>Renewal & Additional Info</SectionDivider>
-
-              {/* Renewal Agreement No + Agreement Date */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <FieldLabel>If Renewal, Agreement No</FieldLabel>
-                  <TextField value={renewalAgreementNo} onChange={setRenewalAgreementNo} placeholder="e.g. 00200" disabled={isReadOnly} />
-                </div>
-                <div>
-                  <FieldLabel>Agreement Date</FieldLabel>
-                  <TextField value={agreementDate} onChange={setAgreementDate} type="date" disabled={isReadOnly} />
-                </div>
-              </div>
-
-              {/* Reason for Hiring */}
-              <div>
-                <FieldLabel>Reason for Hiring</FieldLabel>
-                <TextAreaField value={reasonForHiring} onChange={setReasonForHiring} placeholder="State the reason for hiring this vehicle..." rows={2} disabled={isReadOnly} />
-              </div>
-
-              {/* Special Conditions */}
-              <div>
-                <FieldLabel>Special Conditions & Remarks</FieldLabel>
-                <TextAreaField value={specialConditions} onChange={setSpecialConditions} placeholder="Any special conditions or remarks..." rows={3} disabled={isReadOnly} />
               </div>
 
             </div>
           </div>
+
         </div>
 
         {/* ── Right Panel ── */}
-        <div className="w-[296px] flex-shrink-0 flex flex-col gap-4">
+        <div className="w-72 flex-shrink-0 flex flex-col gap-4">
 
           {/* Workflow Tracker */}
-          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4">
-            <div className="flex items-center justify-between mb-5">
-              {mode !== 'new' ? (
-                <button onClick={() => setShowLog(true)} className="text-[11px] font-semibold text-[#1A438A] hover:underline">View Log</button>
-              ) : <div />}
-              <div className="text-right">
-                <p className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Submission No.</p>
-                <p className="text-[#1A438A] font-bold text-sm font-mono">{submissionNo || '—'}</p>
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-0.5 h-4 rounded-full bg-[#1A438A]" />
+                <span className="text-[11px] font-bold uppercase tracking-widest text-[#17293E]">Workflow</span>
               </div>
+              {mode !== 'new' && <button onClick={() => setShowLog(true)} className="text-[11px] font-semibold text-[#1A438A] hover:underline">View Log</button>}
             </div>
-            <div className="relative flex justify-between items-start">
-              <div className="absolute top-[9px] left-[9px] right-[9px] h-px bg-slate-200" />
-              <div className="absolute top-[9px] left-[9px] h-px bg-[#1A438A] transition-all"
-                style={{ width: `${currentStep === 0 ? 0 : (currentStep / (WORKFLOW_STEPS.length - 1)) * 100}%` }} />
-              {WORKFLOW_STEPS.map((step, i) => (
-                <div key={i} className="relative flex flex-col items-center z-10" style={{ width: `${100 / WORKFLOW_STEPS.length}%` }}>
-                  <div className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all shadow-sm
-                    ${i < currentStep ? 'bg-[#1A438A] border-[#1A438A]'
-                    : i === currentStep ? 'bg-[#1A438A] border-[#1A438A] ring-4 ring-[#1A438A]/15'
-                    : 'bg-white border-slate-300'}`}>
-                    {i < currentStep && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
-                    {i === currentStep && <div className="w-2 h-2 rounded-full bg-white" />}
-                  </div>
-                  <p className="text-[9px] text-center leading-tight whitespace-pre-line mt-1.5 text-slate-500 font-medium px-0.5">{step.label}</p>
+            <div className="px-4 py-4">
+              <div className="flex items-center justify-between mb-5">
+                <div />
+                <div className="text-right">
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wider font-medium">Submission No.</p>
+                  <p className="text-[#1A438A] font-bold text-sm font-mono">{submissionNo || '—'}</p>
                 </div>
-              ))}
+              </div>
+              <div className="relative flex justify-between items-start">
+                <div className="absolute top-[9px] left-[9px] right-[9px] h-px bg-slate-200" />
+                <div className="absolute top-[9px] left-[9px] h-px bg-[#1A438A] transition-all"
+                  style={{ width: `${currentStep === 0 ? 0 : (currentStep / (WORKFLOW_STEPS.length - 1)) * 100}%` }} />
+                {WORKFLOW_STEPS.map((step, i) => (
+                  <div key={i} className="relative flex flex-col items-center z-10" style={{ width: `${100 / WORKFLOW_STEPS.length}%` }}>
+                    <div className={`w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-all shadow-sm
+                      ${i < currentStep ? 'bg-[#1A438A] border-[#1A438A]' : i === currentStep ? 'bg-[#1A438A] border-[#1A438A] ring-4 ring-[#1A438A]/15' : 'bg-white border-slate-300'}`}>
+                      {i < currentStep && <CheckCircle2 className="w-2.5 h-2.5 text-white" />}
+                      {i === currentStep && <div className="w-2 h-2 rounded-full bg-white" />}
+                    </div>
+                    <p className="text-[9px] text-center leading-tight whitespace-pre-line mt-1.5 text-slate-500 font-medium px-0.5">{step.label}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
@@ -944,210 +867,150 @@ function Form4PageContent() {
           <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
               <span className="text-white text-sm font-semibold">Required Documents</span>
-              <button onClick={() => setShowInstructions(true)} className="text-[11px] font-bold px-3 py-1 rounded-full text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #AC9C2F, #c9b535)' }}>
-                Instructions
-              </button>
             </div>
             <div className="p-3 space-y-1.5 min-h-[96px]">
-              {requiredDocs.length === 0 ? (
+              {docKeys.length === 0 ? (
                 <div className="py-5 text-center">
-                  <Paperclip className="w-5 h-5 text-slate-300 mx-auto mb-2" />
-                  <p className="text-[11px] text-slate-400">Select owner type to see<br />required documents</p>
+                  <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center mx-auto mb-2"><Paperclip className="w-5 h-5 text-slate-300" /></div>
+                  <p className="text-[11px] text-slate-400 leading-relaxed">{isReadOnly ? 'No documents' : 'Select Owner Type to see\nrequired documents'}</p>
                 </div>
-              ) : requiredDocs.map((doc, i) => {
-                const files = docFiles[doc.key] || [];
+              ) : docKeys.map((key, i) => {
+                const files = docFiles[key] || [];
                 const hasFiles = files.length > 0;
+                const docStatus = docStatuses[key] || 'NONE';
                 return (
-                  <div key={doc.key} className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
-                    ${hasFiles ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
+                  <div key={key}
+                    className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
+                      ${docStatus === 'ATTENTION' ? 'bg-yellow-50 border-yellow-200' :
+                        docStatus === 'RESUBMIT'  ? 'bg-red-50 border-red-200' :
+                        hasFiles ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
                     <div className="flex-1 mr-2 min-w-0">
-                      <span className="text-[11px] text-slate-600 leading-tight block">
-                        <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}
+                      <span className="text-[11px] text-slate-600 leading-tight flex items-center gap-1 flex-wrap">
+                        <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{key}
                       </span>
                       {hasFiles && <span className="text-[10px] text-emerald-600 font-semibold">{files.length} file{files.length > 1 ? 's' : ''} attached</span>}
+                      {docStatus !== 'NONE' && <StatusBadge status={docStatus} />}
                     </div>
-                    {uploadingDoc === doc.key ? (
+                    {uploadingDoc === key ? (
                       <Loader2 className="w-4 h-4 text-[#1A438A] animate-spin flex-shrink-0" />
-                    ) : canUploadDocs ? (
-                      <button onClick={() => setUploadPopup({ docKey: doc.key, docLabel: doc.label, docId: docIdMap[doc.label] || '' })} className="flex-shrink-0 transition-colors">
+                    ) : !isReadOnly ? (
+                      <button onClick={() => setUploadPopup({ docKey: key, docLabel: key, docId: docIdMap[key] || '' })} className="flex-shrink-0 transition-colors">
                         {hasFiles ? <CheckCircle2 className="w-4 h-4 text-emerald-500 hover:text-emerald-600" /> : <Paperclip className="w-4 h-4 text-[#1183B7] hover:text-[#1A438A]" />}
                       </button>
-                    ) : hasFiles && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
+                    ) : (
+                      hasFiles && <button onClick={() => setUploadPopup({ docKey: key, docLabel: key, docId: docIdMap[key] || '' })} className="flex-shrink-0 transition-colors"><CheckCircle2 className="w-4 h-4 text-emerald-500 hover:text-emerald-600" /></button>
+                    )}
                   </div>
                 );
               })}
             </div>
-            {/* Documents Prepared by Legal Department */}
-            <div className="border-t border-slate-100">
-              <div className="flex items-center gap-2 px-4 py-2.5 bg-slate-50/80">
-                <div className="w-0.5 h-3.5 rounded-full bg-[#1A438A]" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#17293E]">Documents by Legal Dept.</span>
-              </div>
-              <div className="px-3 py-2 space-y-1.5">
-                {(() => {
-                  const loDocsFromDB = (submissionData as any)?.documents?.filter((d: any) => d.type?.startsWith('LO_PREPARED')) || [];
-                  if (loDocsFromDB.length === 0) return <p className="text-[11px] text-slate-400 italic px-1">No documents added yet</p>;
-                  return loDocsFromDB.map((d: any) => (
-                    <div key={d.id} className="flex items-center gap-2 rounded-lg px-3 py-2 bg-[#EEF3F8] border border-[#1A438A]/20">
-                      <FileText className="w-3.5 h-3.5 text-[#1A438A]" />
-                      <span className="text-[11px] font-semibold text-[#1A438A] flex-1 truncate">{d.label}</span>
-                      {d.fileUrl && <button onClick={() => window.open(d.fileUrl, '_blank')} className="w-6 h-6 rounded flex items-center justify-center text-[#1A438A] hover:bg-[#1A438A]/10 transition-colors"><Eye className="w-3.5 h-3.5" /></button>}
-                    </div>
-                  ));
-                })()}
-              </div>
-            </div>
           </div>
 
           {/* Approvals */}
-          <PanelSection title="Approvals" overflowVisible>
-            <div className="p-4 space-y-3.5">
-              <div>
-                <FieldLabel required>BUM</FieldLabel>
-                <ComboBox value={bum} onChange={setBum} options={bumOptions} placeholder="Type or select BUM..." disabled={isReadOnly} hasError={hasError('bum')} />
-                <FieldError message={hasError('bum') ? 'BUM is required' : undefined} />
-              </div>
-              <div>
-                <FieldLabel required>FBP</FieldLabel>
-                <ComboBox value={fbp} onChange={setFbp} options={fbpOptions} placeholder="Type or select FBP..." disabled={isReadOnly} hasError={hasError('fbp')} />
-                <FieldError message={hasError('fbp') ? 'FBP is required' : undefined} />
-              </div>
-              <div>
-                <FieldLabel required>Cluster Head</FieldLabel>
-                <ComboBox value={clusterHead} onChange={setClusterHead} options={clusterOptions} placeholder="Type or select Cluster Head..." disabled={isReadOnly} hasError={hasError('cluster head')} dropUp />
-                <FieldError message={hasError('cluster head') ? 'Cluster Head is required' : undefined} />
-              </div>
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+              <div className="w-0.5 h-4 rounded-full bg-[#1A438A]" />
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#17293E]">Approvals</span>
             </div>
-          </PanelSection>
+            <div className="px-4 py-4 space-y-3">
+              {[['BUM', bum, setBum, bumOptions, 'bum'], ['FBP', fbp, setFbp, fbpOptions, 'fbp'], ['Cluster Head', clusterHead, setClusterHead, clusterOptions, 'clusterHead']].map(([label, val, setter, opts, field]) => (
+                <div key={label as string}>
+                  <FieldLabel required={!isReadOnly}>{label as string}</FieldLabel>
+                  {isReadOnly ? (
+                    <div className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700">{(val as string) || <span className="text-slate-400 italic">—</span>}</div>
+                  ) : (
+                    <ComboBox value={val as string} onChange={setter as (v: string) => void} options={opts as string[]} placeholder={`Type or select ${label}...`} hasError={hasError(field as string)} />
+                  )}
+                  <FieldError message={hasError(field as string) ? `${label} is required` : undefined} />
+                </div>
+              ))}
+            </div>
+          </div>
 
           {/* Comments */}
-          <PanelSection title="Comments">
+          <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
+              <div className="w-0.5 h-4 rounded-full bg-[#1A438A]" />
+              <span className="text-[11px] font-bold uppercase tracking-widest text-[#17293E]">Comments</span>
+            </div>
             <div className="p-3">
               {comments.length > 0 && (
                 <div className="mb-3 space-y-2 max-h-36 overflow-y-auto">
                   {comments.map(c => (
                     <div key={c.id} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                      <div className="flex justify-between mb-1">
-                        <span className="text-[11px] font-bold text-[#1A438A]">{c.author}</span>
-                        <span className="text-[10px] text-slate-400">{c.time}</span>
-                      </div>
+                      <div className="flex justify-between mb-1"><span className="text-[11px] font-bold text-[#1A438A]">{c.author}</span><span className="text-[10px] text-slate-400">{c.time}</span></div>
                       <p className="text-xs text-slate-600 leading-relaxed">{c.text}</p>
                     </div>
                   ))}
                 </div>
               )}
-              <div className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition-all
-                ${commentInput ? 'border-[#1A438A] bg-white ring-2 ring-[#1A438A]/10' : 'border-slate-200 bg-slate-50/80'}`}>
-                <input type="text" value={commentInput}
-                  onChange={(e) => setCommentInput(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter' && commentInput.trim()) { setComments(prev => [...prev, { id: Date.now(), author: session?.user?.name || 'You', text: commentInput.trim(), time: 'Just now' }]); setCommentInput(''); } }}
-                  placeholder="Post your comment here" disabled={isReadOnly}
-                  className="flex-1 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none disabled:cursor-not-allowed"
-                />
-                <button
-                  onClick={() => { if (commentInput.trim()) { setComments(prev => [...prev, { id: Date.now(), author: session?.user?.name || 'You', text: commentInput.trim(), time: 'Just now' }]); setCommentInput(''); } }}
-                  disabled={isReadOnly || !commentInput.trim()}
+              <div className={`flex items-center gap-2 rounded-xl border px-3 py-2.5 transition-all ${commentInput ? 'border-[#1A438A] bg-white ring-2 ring-[#1A438A]/10' : 'border-slate-200 bg-slate-50/80'}`}>
+                <input type="text" value={commentInput} onChange={e => setCommentInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handlePostComment()}
+                  placeholder="Post a comment..." className="flex-1 bg-transparent text-sm text-slate-700 placeholder:text-slate-400 focus:outline-none" />
+                <button onClick={handlePostComment} disabled={!commentInput.trim()}
                   className="w-7 h-7 rounded-lg bg-[#1A438A] disabled:bg-slate-200 flex items-center justify-center transition-all hover:bg-[#1e5aad] active:scale-95">
                   <Send className="w-3.5 h-3.5 text-white" />
                 </button>
               </div>
             </div>
-          </PanelSection>
+          </div>
 
           {/* Action Buttons */}
-          <div className="flex gap-3">
-            <button onClick={() => setShowBackModal(true)} disabled={isSubmitting}
-              className="flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all duration-200 disabled:opacity-50">
-              <ArrowLeft className="w-4 h-4" />Back
-            </button>
-            {!isReadOnly && mode !== 'resubmit' && (
-              <button onClick={() => handleSubmitClick(true)} disabled={isSubmitting}
-                className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all duration-200 active:scale-95 disabled:opacity-70"
+          {!isReadOnly && (
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button onClick={() => router.push(ROUTES.HOME)}
+                  className="flex items-center gap-1.5 py-3 px-4 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all">
+                  <ArrowLeft className="w-4 h-4" />Back
+                </button>
+                <button onClick={() => handleSubmitClick(true)} disabled={isSubmitting}
+                  className="flex-1 py-3 rounded-xl font-bold text-sm border-2 border-slate-300 text-slate-600 hover:bg-slate-50 transition-all disabled:opacity-60">
+                  Save Draft
+                </button>
+              </div>
+              <button onClick={() => handleSubmitClick(false)} disabled={isSubmitting}
+                className="w-full py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-60 flex items-center justify-center gap-2"
                 style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
-                {isSubmitting ? 'Saving...' : 'Save Draft'}
+                {isSubmitting ? <><Loader2 className="w-4 h-4 animate-spin" />Submitting...</> : <><Send className="w-4 h-4" />{mode === 'resubmit' ? 'Resubmit Request' : 'Submit Request'}</>}
               </button>
-            )}
-            {!isReadOnly && (
-              <button onClick={() => { setSubmitted(true); handleSubmitClick(false); }} disabled={isSubmitting}
-                className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all duration-200 active:scale-95 shadow-lg shadow-[#AC9C2F]/25 disabled:opacity-70"
-                style={{ background: 'linear-gradient(135deg, #AC9C2F 0%, #c9b535 100%)' }}>
-                {isSubmitting ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-                    Submitting...
-                  </span>
-                ) : mode === 'resubmit' ? 'Resubmit' : 'Submit'}
-              </button>
-            )}
-          </div>
+            </div>
+          )}
+
+          {isReadOnly && (
+            <button onClick={() => router.push(ROUTES.HOME)}
+              className="flex items-center justify-center gap-1.5 py-3 px-4 rounded-xl border-2 border-[#17293E] text-[#17293E] font-bold text-sm hover:bg-[#17293E] hover:text-white transition-all w-full">
+              <ArrowLeft className="w-4 h-4" />Back to Home
+            </button>
+          )}
+
         </div>
       </div>
 
       {/* ── Modals ── */}
+      {showLog && <ViewLogModal log={log} onClose={() => setShowLog(false)} />}
+
       {uploadPopup && (
-        <UploadPopup docLabel={uploadPopup.docLabel} files={docFiles[uploadPopup.docKey] || []}
-          onAdd={(files) => addFilesToDoc(uploadPopup.docKey, files)}
+        <UploadPopup
+          docLabel={uploadPopup.docLabel}
+          files={docFiles[uploadPopup.docKey] || []}
+          onAdd={(newFiles) => addFilesToDoc(uploadPopup.docKey, newFiles)}
           onRemove={(id) => removeFileFromDoc(uploadPopup.docKey, id)}
-          canRemove={canRemoveDocs} onClose={() => setUploadPopup(null)}
-          onConfirm={async () => {
-            const files = docFiles[uploadPopup.docKey] || [];
-            const newFiles = files.filter(f => !f.fileUrl && f.file);
-            if (!newFiles.length || !submissionId) { setUploadPopup(null); return; }
-            setUploadingDoc(uploadPopup.docKey);
-            for (const f of newFiles) {
-              try {
-                const fd = new FormData(); fd.append('file', f.file); fd.append('submissionId', submissionId);
-                const ur = await fetch('/api/upload', { method: 'POST', body: fd });
-                const ud = await ur.json();
-                if (ud.success && ud.url) {
-                  setDocFiles(prev => ({ ...prev, [uploadPopup.docKey]: (prev[uploadPopup.docKey] || []).map(df => df.id === f.id ? { ...df, fileUrl: ud.url } : df) }));
-                  if (uploadPopup.docId) await fetch(`/api/submissions/${submissionId}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentId: uploadPopup.docId, fileUrl: ud.url, documentStatus: 'UPLOADED' }) });
-                }
-              } catch {}
-            }
-            setUploadingDoc(null); setUploadPopup(null);
-          }}
+          onClose={() => setUploadPopup(null)}
+          onConfirm={() => setUploadPopup(null)}
+          canRemove={!isReadOnly}
         />
       )}
 
-      {showBackModal && (
+      {showValidation && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setShowBackModal(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 flex flex-col items-center text-center">
-            <div className="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center mb-4"><AlertCircle className="w-6 h-6 text-amber-500" /></div>
-            <h3 className="text-[#17293E] font-bold text-base mb-1">Leave this form?</h3>
-            <p className="text-slate-500 text-sm mb-6 leading-relaxed">Your progress will be lost if you go back without saving.</p>
-            <div className="flex flex-col gap-2 w-full">
-              <button onClick={() => handleSubmitClick(true)} disabled={isSubmitting} className="w-full py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95 disabled:opacity-70" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>Save as Draft & Go Back</button>
-              <button onClick={() => router.push(ROUTES.HOME)} disabled={isSubmitting} className="w-full py-2.5 rounded-xl font-bold text-sm border-2 border-red-200 text-red-500 hover:bg-red-50 transition-all">Discard & Go Back</button>
-              <button onClick={() => setShowBackModal(false)} disabled={isSubmitting} className="w-full py-2.5 rounded-xl text-sm text-slate-500 hover:bg-slate-50 transition-all">Cancel, Stay Here</button>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowValidation(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center flex-shrink-0"><AlertCircle className="w-5 h-5 text-red-500" /></div>
+              <h3 className="text-[#17293E] font-bold text-base">Please fix the following</h3>
             </div>
-          </div>
-        </div>
-      )}
-
-      {showValidation && <ValidationModal errors={validationErrors} onClose={() => setShowValidation(false)} />}
-
-      {showInstructions && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowInstructions(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[82vh] flex flex-col overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
-              <span className="text-white font-bold text-base">Instructions</span>
-              <button onClick={() => setShowInstructions(false)} className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition-colors"><X className="w-4 h-4" /></button>
-            </div>
-            <div className="p-6 overflow-y-auto flex-1">
-              {instructionsText ? (
-                <p className="text-sm text-slate-700 leading-relaxed whitespace-pre-wrap">{instructionsText}</p>
-              ) : (
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <p className="text-sm text-amber-800 font-medium leading-relaxed">No instructions configured yet. Please contact the Legal GM.</p>
-                </div>
-              )}
-            </div>
-            <div className="p-4 border-t border-slate-100">
-              <button onClick={() => setShowInstructions(false)} className="w-full py-3 rounded-xl font-bold text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #AC9C2F 0%, #c9b535 100%)' }}>Got it</button>
-            </div>
+            <ul className="space-y-1.5 mb-5">{validationErrors.map((e, i) => <li key={i} className="flex items-start gap-2 text-sm text-slate-600"><span className="w-1.5 h-1.5 rounded-full bg-red-400 mt-1.5 flex-shrink-0" />{e}</li>)}</ul>
+            <button onClick={() => setShowValidation(false)} className="w-full py-2.5 rounded-xl font-bold text-sm text-white" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>OK, I'll fix them</button>
           </div>
         </div>
       )}
@@ -1156,80 +1019,43 @@ function Form4PageContent() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8 flex flex-col items-center text-center">
-            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-5 shadow-lg shadow-green-500/30" style={{ background: 'linear-gradient(135deg, #22c55e 0%, #16a34a 100%)' }}>
-              <svg className="w-8 h-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+            <div className="w-20 h-20 rounded-2xl flex items-center justify-center mb-5 shadow-lg shadow-[#1A438A]/20" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
+              <CheckCircle2 className="w-10 h-10 text-white" />
             </div>
-            <h2 className="text-[#17293E] text-xl font-bold mb-2">Successfully Submitted!</h2>
-            <p className="text-slate-500 text-sm mb-4 leading-relaxed">Your Vehicle Rent Agreement has been submitted and sent for parallel approval to BUM, FBP and Cluster Head.</p>
-            <div className="w-full bg-[#f0f4f9] rounded-xl px-6 py-3 mb-6">
-              <p className="text-[10px] text-slate-400 uppercase tracking-wider font-semibold mb-0.5">Submission No.</p>
-              <p className="text-[#1A438A] font-bold text-lg font-mono">{submissionNo || '—'}</p>
-            </div>
-            <button onClick={() => { setShowSuccess(false); router.push(ROUTES.HOME); }} className="w-full py-3 rounded-xl font-bold text-white transition-all active:scale-95 shadow-lg shadow-[#1A438A]/20" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
+            <h2 className="text-[#17293E] text-xl font-bold mb-2">Submitted!</h2>
+            <p className="text-slate-500 text-sm mb-2 leading-relaxed">Your Vehicle Rent Agreement request has been submitted.</p>
+            <p className="text-[#1A438A] font-bold text-sm font-mono mb-6">Submission ID : #{submissionNo.split('_').pop()}</p>
+            <button onClick={() => router.push(ROUTES.HOME)} className="w-full py-3 rounded-xl font-bold text-white transition-all active:scale-95 shadow-lg shadow-[#1A438A]/20" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
               Return to Home
             </button>
           </div>
         </div>
       )}
 
-      {showLog && (
+      {showSignOut && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowLog(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[80vh]">
-            <div className="flex items-center justify-between px-6 py-4" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>
-              <span className="text-white font-bold text-base">Workflow Log</span>
-              <button onClick={() => setShowLog(false)} className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white"><X className="w-4 h-4" /></button>
-            </div>
-            <div className="overflow-y-auto flex-1 p-4">
-              {log.length === 0 ? <p className="text-sm text-slate-400 text-center py-8">No log entries yet.</p> : (
-                <div className="relative pl-6">
-                  <div className="absolute left-[7px] top-2 bottom-2 w-px bg-slate-200" />
-                  {log.map((entry, i) => (
-                    <div key={entry.id} className="relative mb-4">
-                      <div className={`absolute -left-6 top-1 w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center ${i === 0 ? 'bg-slate-400 border-slate-400' : 'bg-[#1A438A] border-[#1A438A]'}`}>
-                        <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                      </div>
-                      <div className="bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
-                        <div className="flex justify-between items-start gap-2 mb-0.5">
-                          <span className="text-[11px] font-bold text-[#1A438A]">{entry.actor}</span>
-                          <span className="text-[10px] text-slate-400 flex-shrink-0">{entry.timestamp}</span>
-                        </div>
-                        <p className="text-[10px] text-slate-400 font-semibold mb-1">{entry.role}</p>
-                        <p className="text-xs text-slate-600 leading-relaxed">{entry.action}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="p-4 border-t border-slate-100">
-              <button onClick={() => setShowLog(false)} className="w-full py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #1A438A 0%, #1e5aad 100%)' }}>Close</button>
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSignOut(false)} />
+          <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 text-center">
+            <h3 className="text-[#17293E] font-bold text-base mb-2">Sign Out?</h3>
+            <p className="text-slate-500 text-sm mb-5">You will be returned to the login page.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setShowSignOut(false)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={() => router.push('/login')} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>Sign Out</button>
             </div>
           </div>
         </div>
       )}
 
-      {showSignOut && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowSignOut(false)} />
-          <div className="relative bg-white rounded-2xl shadow-2xl p-6 mx-4 w-full max-w-sm z-10">
-            <h3 className="text-lg font-bold text-slate-800 mb-1">Sign Out</h3>
-            <p className="text-sm text-slate-500 mb-5">Are you sure you want to sign out?</p>
-            <div className="flex gap-3">
-              <button onClick={() => setShowSignOut(false)} className="flex-1 py-2.5 rounded-xl font-bold text-sm border-2 border-slate-200 text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
-              <button onClick={() => { setShowSignOut(false); router.push('/login'); }} className="flex-1 py-2.5 rounded-xl font-bold text-sm text-white transition-all active:scale-95" style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}>Sign Out</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
+// ─── Page Export ──────────────────────────────────────────────────────────────
+
 export default function Form4Page() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-gray-50 flex items-center justify-center"><div className="text-gray-600">Loading...</div></div>}>
-      <Form4PageContent />
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-[#f0f4f9]"><div className="w-8 h-8 border-4 border-[#1A438A] border-t-transparent rounded-full animate-spin" /></div>}>
+      <Form4Content />
     </Suspense>
   );
 }

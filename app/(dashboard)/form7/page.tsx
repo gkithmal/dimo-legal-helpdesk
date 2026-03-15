@@ -9,6 +9,7 @@ import {
   FileText, Paperclip, CheckCircle2, X, Upload,
   Eye, Trash2, Send, AlertCircle, ArrowLeft, Loader2,
 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 import NotificationBell from '@/components/shared/NotificationBell';
 import { ROUTES } from '@/lib/routes';
 
@@ -49,8 +50,7 @@ function NumberField({ value, onChange, placeholder, disabled = false }: { value
 
 function DateField({ value, onChange, disabled = false }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
   return (
-    <input type="date" value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled}
-      className={`w-full px-3.5 py-2.5 rounded-lg border text-sm transition-all duration-150 ${disabled ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed' : 'bg-white border-slate-200 text-slate-800 hover:border-[#4686B7] focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'}`} />
+    <DatePicker value={value} onChange={onChange} disabled={disabled} />
   );
 }
 
@@ -137,7 +137,7 @@ function Form7Content() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
-  const [requiredDocs, setRequiredDocs] = useState<{ id: string; label: string; file: AttachedFile | null }[]>([]);
+  const [requiredDocs, setRequiredDocs] = useState<{ id: string; label: string; isRequired: boolean; file: AttachedFile | null }[]>([]);
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
   const [showInstructions, setShowInstructions] = useState(false);
   const [instructionsText, setInstructionsText] = useState('');
@@ -169,20 +169,20 @@ function Form7Content() {
       if (data.success) {
         if (data.data?.instructions) setInstructionsText(data.data.instructions);
         if (data.data?.docs?.length > 0) {
-          setRequiredDocs(data.data.docs.map((d: any) => ({ id: d.id, label: d.label, file: null })));
+          setRequiredDocs(data.data.docs.map((d: any) => ({ id: d.id, label: d.label, isRequired: d.isRequired ?? true, file: null })));
           return;
         }
       }
       if (!data.success || !data.data?.docs?.length) {
         setRequiredDocs([
-          { id: 'doc1', label: 'Artwork', file: null },
-          { id: 'doc2', label: 'Other', file: null },
+          { id: 'doc1', label: 'Artwork', isRequired: true, file: null },
+          { id: 'doc2', label: 'Other', isRequired: false, file: null },
         ]);
       }
     }).catch(() => {
       setRequiredDocs([
-        { id: 'doc1', label: 'Artwork', file: null },
-        { id: 'doc2', label: 'Other', file: null },
+        { id: 'doc1', label: 'Artwork', isRequired: true, file: null },
+        { id: 'doc2', label: 'Other', isRequired: false, file: null },
       ]);
     });
   }, []);
@@ -407,7 +407,7 @@ function Form7Content() {
               <div className="grid grid-cols-2 gap-x-6 gap-y-5">
                 <div>
                   <FieldLabel required>Agreement Reference No</FieldLabel>
-                  <TextField value={agreementRefNo} onChange={setAgreementRefNo} placeholder="e.g. AGR/2024/001" disabled={isReadOnly} />
+                  <TextField value={agreementRefNo} onChange={setAgreementRefNo} placeholder="Enter agreement ref. no..." disabled={isReadOnly} />
                   {hasError('agreement reference') && <p className="flex items-center gap-1 text-[11px] text-red-500 mt-1"><AlertCircle className="w-3 h-3" />Required</p>}
                 </div>
                 <div>
@@ -544,7 +544,7 @@ function Form7Content() {
                 return (
                   <div key={doc.id} className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all ${hasFile ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
                     <div className="flex-1 mr-2 min-w-0">
-                      <span className="text-[11px] text-slate-600 leading-tight block"><span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}</span>
+                      <span className="text-[11px] text-slate-600 leading-tight flex items-center gap-1 flex-wrap"><span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}{!doc.isRequired&&<span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-400">Optional</span>}</span>
                       {hasFile && <span className="text-[10px] text-emerald-600 font-semibold">{doc.file!.name}</span>}
                     </div>
                     {uploading[doc.id] ? <Loader2 className="w-4 h-4 text-[#1A438A] animate-spin flex-shrink-0" />

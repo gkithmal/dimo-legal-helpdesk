@@ -11,10 +11,11 @@ import {
   RotateCcw, Send, Eye, Plus,
   AlertCircle, Upload, X, Loader2, Paperclip,
 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 type LOStage = 'PENDING_GM' | 'REASSIGNED' | 'ACTIVE' | 'POST_GM_APPROVAL' | 'FINALIZATION';
-type DocStatus = 'NONE' | 'OK' | 'ATTENTION' | 'RESUBMIT';
+type DocStatus = 'NONE' | 'OK' | 'ATTENTION' | 'RESUBMIT' | 'UPLOADED';
 
 type RequiredDoc = { id: string; label: string; status: DocStatus; hasFile: boolean; fileUrl?: string | null; comment?: string };
 type PreparedDoc = { id: string; name: string; type: 'draft'; fileUrl?: string | null };
@@ -122,6 +123,7 @@ function FormField({ label, required, children }: { label: string; required?: bo
 }
 
 function DocStatusIcon({ status }: { status: DocStatus }) {
+  if (status === 'UPLOADED') return <span className="w-4 h-4 rounded-full bg-emerald-400 flex items-center justify-center"><Paperclip className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'OK') return <span className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center"><CheckCircle2 className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'ATTENTION') return <span className="w-4 h-4 rounded-full bg-yellow-400 flex items-center justify-center"><AlertCircle className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'RESUBMIT') return <span className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center"><XCircle className="w-2.5 h-2.5 text-white" /></span>;
@@ -490,18 +492,25 @@ function Form7LegalOfficerContent() {
           {/* Official Use Only — shown when LO is in finalization stage */}
           {isPostGM && (
             <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-              <div className="px-5 py-3 border-b border-slate-100" style={{ background: 'linear-gradient(135deg, #17293E, #1A438A)' }}>
+              <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between" style={{ background: 'linear-gradient(135deg, #17293E, #1A438A)' }}>
                 <span className="text-white font-bold text-sm">Official Use Only (Legal Officer should enter)</span>
+                {selected?.status === 'COMPLETED' && <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500 px-2 py-0.5 rounded-full text-white">Completed</span>}
               </div>
               <div className="p-5 space-y-4">
+                {selected?.status === 'COMPLETED' && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <span className="text-xs font-semibold text-emerald-700">This request has been completed — data cannot be modified.</span>
+                  </div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <FormField label="Termination Letter Reference No" required>
-                    <input value={terminationLetterRefNo} onChange={(e) => setTerminationLetterRefNo(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+                    <input value={terminationLetterRefNo} onChange={(e) => { if (selected?.status !== 'COMPLETED') setTerminationLetterRefNo(e.target.value); }}
+                      readOnly={selected?.status === 'COMPLETED'}
+                      className={`w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none ${selected?.status === 'COMPLETED' ? 'bg-slate-100 cursor-default' : 'bg-slate-50 focus:border-[#1A438A]'}`} />
                   </FormField>
                   <FormField label="Termination Letter Sent Date" required>
-                    <input type="date" value={terminationLetterSentDate} onChange={(e) => setTerminationLetterSentDate(e.target.value)}
-                      className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A]" />
+                    <DatePicker value={terminationLetterSentDate} onChange={selected?.status !== 'COMPLETED' ? setTerminationLetterSentDate : () => {}} disabled={selected?.status === 'COMPLETED'} />
                   </FormField>
                 </div>
                 <FormField label="Termination Letter" required>
@@ -509,12 +518,14 @@ function Form7LegalOfficerContent() {
                     <div className="flex-1 px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-600">
                       {terminationLetterFile ? terminationLetterFile.name : <span className="text-slate-400">No file uploaded</span>}
                     </div>
-                    <button onClick={() => letterFileRef.current?.click()} disabled={uploadingLetter}
-                      className="px-3 py-2 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 disabled:opacity-60"
-                      style={{ background: '#1A438A' }}>
-                      {uploadingLetter ? <Loader2 className="w-3 h-3 animate-spin" /> : <Paperclip className="w-3 h-3" />}
-                      {uploadingLetter ? 'Uploading…' : 'Attach'}
-                    </button>
+                    {selected?.status !== 'COMPLETED' && (
+                      <button onClick={() => letterFileRef.current?.click()} disabled={uploadingLetter}
+                        className="px-3 py-2 rounded-lg text-xs font-bold text-white flex items-center gap-1.5 disabled:opacity-60"
+                        style={{ background: '#1A438A' }}>
+                        {uploadingLetter ? <Loader2 className="w-3 h-3 animate-spin" /> : <Paperclip className="w-3 h-3" />}
+                        {uploadingLetter ? 'Uploading…' : 'Attach'}
+                      </button>
+                    )}
                     <input ref={letterFileRef} type="file" accept=".pdf,.doc,.docx" className="hidden"
                       onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadLetter(f); e.target.value = ''; }} />
                     {terminationLetterFile && (
@@ -526,8 +537,9 @@ function Form7LegalOfficerContent() {
                   </div>
                 </FormField>
                 <FormField label="Remarks">
-                  <textarea value={officialRemarks} onChange={(e) => setOfficialRemarks(e.target.value)} rows={3}
-                    className="w-full px-3 py-2 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] resize-none" />
+                  <textarea value={officialRemarks} onChange={(e) => { if (selected?.status !== 'COMPLETED') setOfficialRemarks(e.target.value); }}
+                    readOnly={selected?.status === 'COMPLETED'} rows={3}
+                    className={`w-full px-3 py-2 rounded-lg border border-slate-200 text-sm focus:outline-none resize-none ${selected?.status === 'COMPLETED' ? 'bg-slate-100 cursor-default' : 'bg-slate-50 focus:border-[#1A438A]'}`} />
                 </FormField>
 
                 {/* Finalization action buttons */}
@@ -535,17 +547,25 @@ function Form7LegalOfficerContent() {
                   <button onClick={() => setSelected(null)} className="px-4 py-2.5 rounded-xl font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors text-sm">
                     Back
                   </button>
-                  <button onClick={() => saveOfficialUse(false)} disabled={saving}
-                    className="px-4 py-2.5 rounded-xl font-bold text-[#1A438A] border border-[#1A438A] hover:bg-[#EEF3F8] transition-colors text-sm disabled:opacity-60">
-                    Save and Close
-                  </button>
-                  <button onClick={() => saveOfficialUse(true)}
-                    disabled={saving || !terminationLetterRefNo || !terminationLetterSentDate || !terminationLetterFile}
-                    className="px-4 py-2.5 rounded-xl font-bold text-white transition-all active:scale-95 disabled:opacity-60 text-sm flex items-center gap-1.5"
-                    style={{ background: 'linear-gradient(135deg, #7CB518, #6aa315)' }}>
-                    {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-                    Job Completion
-                  </button>
+                  {selected?.status === 'COMPLETED' ? (
+                    <div className="flex-1 py-2.5 rounded-xl font-bold text-sm text-center bg-emerald-50 border-2 border-emerald-200 text-emerald-700">
+                      ✓ This request has been completed
+                    </div>
+                  ) : (
+                    <>
+                      <button onClick={() => saveOfficialUse(false)} disabled={saving}
+                        className="px-4 py-2.5 rounded-xl font-bold text-[#1A438A] border border-[#1A438A] hover:bg-[#EEF3F8] transition-colors text-sm disabled:opacity-60">
+                        Save and Close
+                      </button>
+                      <button onClick={() => saveOfficialUse(true)}
+                        disabled={saving || !terminationLetterRefNo || !terminationLetterSentDate || !terminationLetterFile}
+                        className="px-4 py-2.5 rounded-xl font-bold text-white transition-all active:scale-95 disabled:opacity-60 text-sm flex items-center gap-1.5"
+                        style={{ background: 'linear-gradient(135deg, #7CB518, #6aa315)' }}>
+                        {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                        Job Completion
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>

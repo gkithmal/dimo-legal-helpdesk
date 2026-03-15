@@ -30,7 +30,7 @@ interface AttachedFile {
 }
 
 interface CommentEntry {
-  id: number;
+  id: string | number;
   author: string;
   text: string;
   time: string;
@@ -69,37 +69,6 @@ const SAP_COST_CENTERS = [
   '000004006 - Technology Division',
 ];
 
-const LEGAL_OFFICERS = [
-  'Ashan Fernando',
-  'Priya Jayasuriya',
-  'Dimuthu Bandara',
-  'Sachini Perera',
-  'Nuwan Silva',
-];
-
-const BUMS = [
-  'Rajith Dissanayake',
-  'Malika Wickremasinghe',
-  'Chamara Gunasekera',
-  'Tharushi Madushanka',
-  'Asanka Jayawardena',
-];
-
-const FBPS = [
-  'Dilshan Ranasinghe',
-  'Samanthi Liyanage',
-  'Buddhika Amarasinghe',
-  'Nadeeka Weerasinghe',
-  'Prasad Kumara',
-];
-
-const CLUSTER_HEADS = [
-  'Nalin Perera',
-  'Anusha Rathnayake',
-  'Gayan Wijesinghe',
-  'Thilini Senanayake',
-  'Shehan Mendis',
-];
 
 const REQUIRED_DOCS: Record<string, string[]> = {
   Company: [
@@ -140,18 +109,6 @@ const WORKFLOW_STEPS = [
   { label: 'Ready to\nCollect' },
 ];
 
-const INSTRUCTIONS_TEXT = [
-  'Please read the following instructions carefully before filling out this form.',
-  'Select the correct Company Code that corresponds to the Dialog entity entering into this agreement.',
-  'Choose the Agreement Title that best describes the nature of the contract.',
-  'Enter all parties to the agreement, including their legal type and full registered name.',
-  'Select the SAP Cost Center that will bear the cost of this agreement.',
-  'Describe the full scope of the agreement — what services or goods are being exchanged.',
-  'Specify the commencement date, end/expiry date, and any renewal terms clearly.',
-  'Enter the total monetary value of the agreement in Sri Lankan Rupees (LKR).',
-  'Attach all required documents based on the party types selected. Documents must be certified copies.',
-  'Select the appropriate Legal Officer, BUM, FBP, and Cluster Head for routing and approval.',
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -199,7 +156,6 @@ function ComboBox({
   placeholder?: string; disabled?: boolean; dropUp?: boolean; hasError?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const [showSignOut, setShowSignOut] = useState(false);
   const [query, setQuery] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -250,7 +206,7 @@ function ComboBox({
           placeholder={value ? value : (placeholder || 'Type to search...')}
           disabled={disabled}
           className={`flex-1 px-3.5 py-2.5 text-sm bg-transparent focus:outline-none rounded-lg
-            ${disabled ? 'cursor-not-allowed text-slate-400' : 'text-slate-800'}
+            ${disabled ? 'cursor-not-allowed text-slate-700' : 'text-slate-800'}
             ${!open && value ? 'font-medium' : 'font-normal'}
             placeholder:text-slate-400 placeholder:font-normal`}
         />
@@ -316,7 +272,7 @@ function SelectField({
       <button type="button" disabled={disabled} onClick={() => setOpen(!open)}
         className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-lg border text-sm text-left transition-all duration-150
           ${disabled
-            ? 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'
+            ? 'bg-slate-50 border-slate-200 text-slate-700 cursor-not-allowed'
             : open
               ? 'bg-white border-[#1A438A] shadow-sm ring-2 ring-[#1A438A]/10'
               : 'bg-white border-slate-200 text-slate-700 hover:border-[#4686B7] hover:shadow-sm cursor-pointer'
@@ -373,7 +329,7 @@ function TextAreaField({ value, onChange, placeholder, hint, rows = 4, disabled 
         placeholder={placeholder} rows={rows} disabled={disabled}
         className={`w-full px-3.5 py-2.5 rounded-lg border text-sm resize-none transition-all duration-150
           ${disabled
-            ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
+            ? 'bg-slate-50 border-slate-200 text-slate-700 cursor-not-allowed'
             : hasError
               ? 'bg-white border-red-400 ring-2 ring-red-400/10 focus:outline-none'
               : 'bg-white border-slate-200 text-slate-800 hover:border-[#4686B7] focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'
@@ -392,7 +348,7 @@ function PartyNameField({ value, onChange, placeholder, disabled = false }: {
       placeholder={placeholder} disabled={disabled}
       className={`w-full px-3.5 py-2.5 rounded-lg border text-sm transition-all duration-150
         ${disabled
-          ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
+          ? 'bg-slate-50 border-slate-200 text-slate-700 cursor-not-allowed'
           : 'bg-white border-slate-200 text-slate-800 hover:border-[#4686B7] focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'
         }`}
     />
@@ -426,7 +382,7 @@ function LKRField({ value, onChange, disabled = false, hasError = false }: {
         placeholder="0.00" disabled={disabled}
         className={`w-full pl-12 pr-3.5 py-2.5 rounded-lg border text-sm font-mono transition-all duration-150
           ${disabled
-            ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
+            ? 'bg-slate-50 border-slate-200 text-slate-700 cursor-not-allowed'
             : hasError
               ? 'bg-white border-red-400 ring-2 ring-red-400/10 focus:outline-none'
               : 'bg-white border-slate-200 text-slate-800 hover:border-[#4686B7] focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'
@@ -444,7 +400,7 @@ function TextField({ value, onChange, placeholder, disabled = false }: {
       placeholder={placeholder} disabled={disabled}
       className={`w-full px-3.5 py-2.5 rounded-lg border text-sm transition-all duration-150
         ${disabled
-          ? 'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
+          ? 'bg-slate-50 border-slate-200 text-slate-700 cursor-not-allowed'
           : 'bg-white border-slate-200 text-slate-800 hover:border-[#4686B7] focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'
         }`}
     />
@@ -459,6 +415,13 @@ function SectionDivider({ children }: { children: React.ReactNode }) {
       <div className="h-px flex-1 bg-slate-100" />
     </div>
   );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'OK')        return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">OK</span>;
+  if (status === 'ATTENTION') return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">Attention</span>;
+  if (status === 'RESUBMIT')  return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">Resubmit</span>;
+  return null;
 }
 
 function PanelSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -514,7 +477,7 @@ function UploadPopup({ docLabel, files, onAdd, onRemove, onClose, onConfirm, can
           </button>
         </div>
 
-        {canRemove && (<div className="p-5">
+        <div className="p-5">
           <div onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)} onClick={() => inputRef.current?.click()}
             className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all duration-200
@@ -527,7 +490,7 @@ function UploadPopup({ docLabel, files, onAdd, onRemove, onClose, onConfirm, can
             <p className="text-[11px] text-slate-300 mt-2">PDF, Word, Excel, Images — any file type accepted</p>
             <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
           </div>
-        </div>)}
+        </div>
 
         {files.length > 0 && (
           <div className="px-5 pb-2">
@@ -663,6 +626,25 @@ function Form1PageContent() {
           BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head',
           LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer', SPECIAL_APPROVER: 'Special Approver',
         };
+        const approvalAction = (role: string, status: string): string => {
+          if (role === 'LEGAL_GM') {
+            if (status === 'OK_TO_PROCEED')          return 'OK to Proceed — Forwarded to Legal Officer';
+            if (status === 'APPROVED')               return 'Final Approval — Forwarded to Legal Officer';
+            if (status === 'SENT_BACK')              return 'Sent Back to Initiator';
+            if (status === 'CANCELLED')              return 'Cancelled';
+          }
+          if (role === 'LEGAL_OFFICER') {
+            if (status === 'SUBMIT_TO_LEGAL_GM')      return 'Submitted to Legal GM for Final Review';
+            if (status === 'RETURNED_TO_INITIATOR')   return 'Returned to Initiator';
+            if (status === 'COMPLETED')               return 'Job Completed';
+            if (status === 'ASSIGN_SPECIAL_APPROVER') return 'Assigned Special Approver';
+            if (status === 'ASSIGN_COURT_OFFICER')    return 'Assigned Court Officer';
+          }
+          if (status === 'APPROVED')  return 'Approved';
+          if (status === 'SENT_BACK') return 'Sent Back';
+          if (status === 'CANCELLED') return 'Cancelled';
+          return status;
+        };
         const STATUS_MAP: Record<string,string> = {
           PENDING_APPROVAL: 'Pending First Level Approvals',
           PENDING_LEGAL_GM: 'Pending Legal GM Review',
@@ -674,16 +656,17 @@ function Form1PageContent() {
           CANCELLED: 'Cancelled',
         };
         const fmt = (d: string) => d ? new Date(d).toLocaleString('en-GB', { day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
-        const logEntries: {id:number;actor:string;role:string;action:string;timestamp:string}[] = [
-          { id: 0, actor: 'System', role: 'System', action: 'Submission created — ' + (STATUS_MAP[s.status] || s.status), timestamp: fmt(s.createdAt) },
+        const logEntries: {id:number;actor:string;role:string;action:string;timestamp:string;_date:string}[] = [
+          { id: 0, actor: 'System', role: 'System', action: s.parentId ? 'Resubmitted — Sent for Approval' : 'Submission created — Sent for Approval', timestamp: fmt(s.createdAt), _date: s.createdAt },
           ...(s.approvals || [])
             .filter((a: any) => a.actionDate)
             .map((a: any, i: number) => ({
               id: i + 1,
               actor: a.approverName || a.role,
               role: ROLE_LABEL[a.role] || a.role,
-              action: a.status === 'APPROVED' ? 'Approved' : a.status === 'SENT_BACK' ? 'Sent Back' : 'Cancelled',
+              action: approvalAction(a.role, a.status),
               timestamp: fmt(a.actionDate),
+              _date: a.actionDate,
             })),
           ...(s.comments || []).map((c: any, i: number) => ({
             id: 1000 + i,
@@ -691,6 +674,7 @@ function Form1PageContent() {
             role: ROLE_LABEL[c.authorRole] || c.authorRole,
             action: 'Comment: "' + c.text + '"',
             timestamp: fmt(c.createdAt),
+            _date: c.createdAt,
           })),
           ...(s.specialApprovers || [])
             .filter((sa: any) => sa.actionDate)
@@ -700,20 +684,62 @@ function Form1PageContent() {
               role: 'Special Approver',
               action: sa.status === 'APPROVED' ? 'Approved' : 'Sent Back',
               timestamp: fmt(sa.actionDate),
+              _date: sa.actionDate,
             })),
-        ].sort((a, b) => a.id - b.id);
+        ].sort((a, b) => new Date(b._date).getTime() - new Date(a._date).getTime()); // newest first
+
+        // For COMPLETED submissions: infer missing LO "Job Completed" entry (pre-dates audit logging)
+        // and always add a final "Request Completed" system entry at the top
+        if (s.status === 'COMPLETED') {
+          const hasLoCompletedRecord = logEntries.some(
+            (e) => e.role === 'Legal Officer' && e.action === 'Job Completed'
+          );
+          if (!hasLoCompletedRecord) {
+            const loName = s.legalOfficerName || s.assignedLegalOfficer || 'Legal Officer';
+            logEntries.unshift({
+              id: -1,
+              actor: loName,
+              role: 'Legal Officer',
+              action: 'Job Completed',
+              timestamp: fmt(s.updatedAt),
+              _date: s.updatedAt,
+            });
+          }
+          // Always pin a "Request Completed" system entry at the very top
+          logEntries.unshift({
+            id: -2,
+            actor: 'System',
+            role: 'System',
+            action: 'Request Completed ✓',
+            timestamp: fmt(s.updatedAt),
+            _date: s.updatedAt,
+          });
+        }
         setLog(logEntries);
         if (s.documents?.length) {
           const loaded: Record<string, AttachedFile[]> = {};
           const idMap: Record<string, string> = {};
+          const statuses: Record<string, string> = {};
           s.documents.forEach((doc: any) => {
             idMap[doc.label] = doc.id;
+            statuses[doc.label] = doc.status || 'NONE';
             if (doc.fileUrl) {
               loaded[doc.label] = [{ id: doc.id, name: doc.label, size: 0, file: { name: doc.label, size: 0 } as File, fileUrl: doc.fileUrl }];
             }
           });
           setDocFiles(loaded);
+          docFilesRef.current = loaded; // keep ref in sync so resubmit re-links pre-uploaded files
           setDocIdMap(idMap);
+          setDocStatuses(statuses);
+        }
+        // Load DB comments (send-back reasons from Legal are visible here)
+        if (s.comments?.length) {
+          setComments(s.comments.map((c: any) => ({
+            id: c.id,
+            author: c.authorName,
+            text: c.text,
+            time: fmt(c.createdAt),
+          })));
         }
       })
       .catch((err) => console.error("Failed to load data:", err));
@@ -722,7 +748,7 @@ function Form1PageContent() {
   // ── UI state ──
   const [showInstructions, setShowInstructions] = useState(false);
   const [instructionsText, setInstructionsText] = useState<string>('');
-  const [formConfigDocs, setFormConfigDocs] = useState<{ label: string; type: string }[]>([]);
+  const [formConfigDocs, setFormConfigDocs] = useState<{ id: string; label: string; type: string; isRequired: boolean }[]>([]);
   useEffect(() => {
     fetch('/api/settings/forms')
       .then(r => r.json())
@@ -742,6 +768,7 @@ function Form1PageContent() {
   const [uploadPopup, setUploadPopup] = useState<{ docKey: string; docLabel: string; docId: string } | null>(null);
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
   const [docIdMap, setDocIdMap] = useState<Record<string, string>>({});
+  const [docStatuses, setDocStatuses] = useState<Record<string, string>>({});
   const [docFiles, setDocFiles] = useState<Record<string, AttachedFile[]>>({});
   const docFilesRef = useRef<Record<string, AttachedFile[]>>({});
 
@@ -791,18 +818,18 @@ function Form1PageContent() {
   const [commentInput, setCommentInput] = useState('');
   const [comments, setComments] = useState<CommentEntry[]>([]);
   const [showLog, setShowLog] = useState(false);
-  const [log, setLog] = useState<{id:number;actor:string;role:string;action:string;timestamp:string}[]>([]);
+  const [log, setLog] = useState<{id:number;actor:string;role:string;action:string;timestamp:string;_date?:string}[]>([]);
 
   // ── Derived ──
   const selectedTypes = Array.from(new Set(parties.map((p) => p.type).filter(Boolean)));
-  const requiredDocs: { label: string; key: string }[] = [];
+  const requiredDocs: { id: string; label: string; key: string; isRequired: boolean }[] = [];
   if (formConfigDocs.length > 0) {
     // Use admin-configured docs from settings — filter by selected party types + Common
     formConfigDocs.forEach((doc) => {
       const normalizedType = doc.type.replace('-', ' '); // handle Sole-proprietorship vs Sole proprietorship
       if (doc.type === 'Common' || selectedTypes.includes(doc.type) || selectedTypes.includes(normalizedType)) {
         if (!requiredDocs.find((d) => d.key === doc.label)) {
-          requiredDocs.push({ label: doc.label, key: doc.label });
+          requiredDocs.push({ id: doc.id, label: doc.label, key: doc.label, isRequired: doc.isRequired });
         }
       }
     });
@@ -811,12 +838,12 @@ function Form1PageContent() {
     selectedTypes.forEach((type) => {
       (REQUIRED_DOCS[type] || []).forEach((doc) => {
         const key = doc;
-        if (!requiredDocs.find((d) => d.key === key)) requiredDocs.push({ label: doc, key });
+        if (!requiredDocs.find((d) => d.key === key)) requiredDocs.push({ id: '', label: doc, key, isRequired: true });
       });
     });
     if (selectedTypes.includes('Company')) {
       COMMON_DOCS.forEach((doc) => {
-        if (!requiredDocs.find((d) => d.key === doc)) requiredDocs.push({ label: doc, key: doc });
+        if (!requiredDocs.find((d) => d.key === doc)) requiredDocs.push({ id: '', label: doc, key: doc, isRequired: true });
       });
     }
   }
@@ -863,6 +890,8 @@ function Form1PageContent() {
 
       const payload = {
         submissionNo: finalSubmissionNo,
+        formId: 1,
+        formName: 'Contract Review Form',
         status: asDraft ? 'DRAFT' : 'PENDING_APPROVAL',
         initiatorId: session?.user?.id || '',
         initiatorName: session?.user?.name || '',
@@ -925,7 +954,7 @@ function Form1PageContent() {
         for (const [docKey, files] of Object.entries(docFilesRef.current)) {
           for (const f of files as AttachedFile[]) {
             if (f.file && !f.fileUrl) {
-              const docId = docLabelToId[docKey] || docLabelToId[f.name] || "";
+              const docId = docLabelToId[docKey] || docLabelToId[docKey.trim().toLowerCase()] || docLabelToId[f.name] || docLabelToId[f.name.trim().toLowerCase()] || "";
               const promise = (async () => {
                 const fd = new FormData();
                 fd.append("file", f.file);
@@ -945,6 +974,22 @@ function Form1PageContent() {
           }
         }
         await Promise.all(uploadPromises);
+
+        // Re-link already-uploaded files (fileUrl set) to new submission doc IDs
+        for (const [docKey, files] of Object.entries(docFilesRef.current)) {
+          for (const f of files as AttachedFile[]) {
+            if (f.fileUrl) {
+              const docId = docLabelToId[docKey] || docLabelToId[docKey.trim().toLowerCase()] || docLabelToId[f.name] || docLabelToId[f.name.trim().toLowerCase()] || "";
+              if (docId) {
+                await fetch(`/api/submissions/${newSubmissionId}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ documentId: docId, fileUrl: f.fileUrl, documentStatus: "UPLOADED" }),
+                });
+              }
+            }
+          }
+        }
       }
 
       if (asDraft) {
@@ -971,10 +1016,19 @@ function Form1PageContent() {
     setParties(updated);
   };
 
-  const handlePostComment = () => {
-    if (!commentInput.trim()) return;
-    setComments((prev) => [...prev, { id: Date.now(), author: session?.user?.name || 'You', text: commentInput.trim(), time: 'Just now' }]);
+  const handlePostComment = async () => {
+    if (!commentInput.trim() || !submissionId) return;
+    const text = commentInput.trim();
     setCommentInput('');
+    const res = await fetch(`/api/submissions/${submissionId}/comments`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ authorName: session?.user?.name || 'Initiator', authorRole: 'INITIATOR', text }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setComments((prev) => [...prev, { id: data.data.id, author: data.data.authorName, text: data.data.text, time: 'Just now' }]);
+    }
   };
 
   const addFilesToDoc = (docKey: string, newFiles: AttachedFile[]) =>
@@ -998,7 +1052,15 @@ function Form1PageContent() {
     if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 3;
     if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 4;
     if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
-    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 5;
+    if (submissionStatus === 'COMPLETED') return 5;
+    if (submissionStatus === 'CANCELLED') {
+      if (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION') return 5;
+      if (loStage === 'REVIEW_FOR_GM' || loStage === 'SUBMIT_TO_LEGAL_GM') return 4;
+      if (loStage === 'INITIAL_REVIEW' || loStage === 'ACTIVE' || loStage === 'ASSIGN_COURT_OFFICER') return 3;
+      const lgmStage = (submissionData as any)?.legalGmStage || '';
+      if (lgmStage) return 2;
+      return 1;
+    }
     return 1;
   })();
 
@@ -1225,15 +1287,20 @@ function Form1PageContent() {
                 requiredDocs.map((doc, i) => {
                   const files = docFiles[doc.key] || [];
                   const hasFiles = files.length > 0;
+                  const docStatus = docStatuses[doc.key] || 'NONE';
                   return (
                     <div key={doc.key}
                       className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
-                        ${hasFiles ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
+                        ${docStatus === 'ATTENTION' ? 'bg-yellow-50 border-yellow-200' :
+                          docStatus === 'RESUBMIT'  ? 'bg-red-50 border-red-200' :
+                          hasFiles ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
                       <div className="flex-1 mr-2 min-w-0">
-                        <span className="text-[11px] text-slate-600 leading-tight block">
+                        <span className="text-[11px] text-slate-600 leading-tight flex items-center gap-1 flex-wrap">
                           <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}
+                          {!doc.isRequired && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-400">Optional</span>}
                         </span>
                         {hasFiles && <span className="text-[10px] text-emerald-600 font-semibold">{files.length} file{files.length > 1 ? 's' : ''} attached</span>}
+                        {docStatus !== 'NONE' && <StatusBadge status={docStatus} />}
                       </div>
                       {uploadingDoc === doc.key ? (
                         <Loader2 className="w-4 h-4 text-[#1A438A] animate-spin flex-shrink-0" />
@@ -1242,7 +1309,7 @@ function Form1PageContent() {
                           {hasFiles ? <CheckCircle2 className="w-4 h-4 text-emerald-500 hover:text-emerald-600" /> : <Paperclip className="w-4 h-4 text-[#1183B7] hover:text-[#1A438A]" />}
                         </button>
                       ) : (
-                        hasFiles && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                        hasFiles && <button onClick={() => setUploadPopup({ docKey: doc.key, docLabel: doc.label, docId: docIdMap[doc.label] || '' })} className="flex-shrink-0 transition-colors"><CheckCircle2 className="w-4 h-4 text-emerald-500 hover:text-emerald-600" /></button>
                       )}
                     </div>
                   );
@@ -1304,7 +1371,7 @@ function Form1PageContent() {
                               {hasFiles ? <CheckCircle2 className="w-4 h-4 text-emerald-500 hover:text-emerald-600" /> : <Paperclip className="w-4 h-4 text-amber-500 hover:text-amber-600" />}
                             </button>
                           ) : (
-                            hasFiles && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
+                            hasFiles && <button onClick={() => setUploadPopup({ docKey: d.label, docLabel: d.label, docId: d.id })} className="flex-shrink-0 transition-colors"><CheckCircle2 className="w-4 h-4 text-emerald-500 hover:text-emerald-600" /></button>
                           )}
                         </div>
                       );
@@ -1605,22 +1672,26 @@ function ViewLogModal({ log, onClose }: { log: {id:number;actor:string;role:stri
           ) : (
             <div className="relative pl-6">
               <div className="absolute left-[7px] top-2 bottom-2 w-px bg-slate-200" />
-              {log.map((entry, i) => (
-                <div key={entry.id} className="relative mb-4">
-                  <div className={`absolute -left-6 top-1 w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center
-                    ${i === 0 ? 'bg-slate-400 border-slate-400' : 'bg-[#1A438A] border-[#1A438A]'}`}>
-                    <div className="w-1.5 h-1.5 rounded-full bg-white" />
-                  </div>
-                  <div className="bg-slate-50 rounded-xl px-3 py-2.5 border border-slate-100">
-                    <div className="flex justify-between items-start gap-2 mb-0.5">
-                      <span className="text-[11px] font-bold text-[#1A438A]">{entry.actor}</span>
-                      <span className="text-[10px] text-slate-400 flex-shrink-0">{entry.timestamp}</span>
+              {log.map((entry, i) => {
+                const isCompleted = entry.id === -2; // "Request Completed" system cap
+                const isLast = i === log.length - 1;  // oldest entry (System created)
+                return (
+                  <div key={entry.id} className="relative mb-4">
+                    <div className={`absolute -left-6 top-1 w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center
+                      ${isCompleted ? 'bg-emerald-500 border-emerald-500' : isLast ? 'bg-slate-400 border-slate-400' : 'bg-[#1A438A] border-[#1A438A]'}`}>
+                      <div className="w-1.5 h-1.5 rounded-full bg-white" />
                     </div>
-                    <p className="text-[10px] text-slate-400 font-semibold mb-1">{entry.role}</p>
-                    <p className="text-xs text-slate-600 leading-relaxed">{entry.action}</p>
+                    <div className={`rounded-xl px-3 py-2.5 border ${isCompleted ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}>
+                      <div className="flex justify-between items-start gap-2 mb-0.5">
+                        <span className={`text-[11px] font-bold ${isCompleted ? 'text-emerald-700' : 'text-[#1A438A]'}`}>{entry.actor}</span>
+                        <span className="text-[10px] text-slate-400 flex-shrink-0">{entry.timestamp}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 font-semibold mb-1">{entry.role}</p>
+                      <p className={`text-xs leading-relaxed font-semibold ${isCompleted ? 'text-emerald-700' : 'text-slate-600'}`}>{entry.action}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

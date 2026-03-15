@@ -48,7 +48,7 @@ type Submission = {
 
 // LEGAL_OFFICERS loaded dynamically from API
 
-const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head' };
+const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head', CEO: 'CEO', LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer' };
 
 const WORKFLOW_STEPS = [
   { label: 'Form\nSubmission' },
@@ -87,6 +87,13 @@ function ReadField({ label, value, multiline = false }: { label: string; value: 
   );
 }
 
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'OK')        return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">OK</span>;
+  if (status === 'ATTENTION') return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">Attention</span>;
+  if (status === 'RESUBMIT')  return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">Resubmit</span>;
+  return null;
+}
+
 function PanelSection({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
@@ -102,17 +109,21 @@ function PanelSection({ title, action, children }: { title: string; action?: Rea
   );
 }
 
-function ApproverRow({ label, name, status }: { label: string; name: string; status: ApprovalStatus }) {
+function ApproverRow({ label, name, status }: { label: string; name: string; status: string }) {
+  const isApproved = status === 'APPROVED' || status === 'OK_TO_PROCEED' || status === 'COMPLETED' || status === 'SUBMIT_TO_LEGAL_GM';
+  const isCancelled = status === 'CANCELLED';
+  const isSentBack = status === 'SENT_BACK' || status === 'RETURNED_TO_INITIATOR';
+  const isPending = status === 'PENDING';
   return (
     <div className="flex items-center justify-between py-2 px-1">
       <div className="flex items-center gap-2 flex-1 min-w-0">
         <span className="text-[11px] font-bold text-slate-600 w-20 flex-shrink-0">{label}</span>
         <span className="text-[11px] text-slate-500 truncate">{name || '—'}</span>
       </div>
-      {status === 'APPROVED'  && <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0 ml-2"><CheckCircle2 className="w-3 h-3 text-white" /></span>}
-      {status === 'CANCELLED' && <span className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 ml-2"><XCircle className="w-3 h-3 text-white" /></span>}
-      {status === 'SENT_BACK' && <span className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0 ml-2"><RotateCcw className="w-3 h-3 text-white" /></span>}
-      {status === 'PENDING'   && <span className="w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center flex-shrink-0 ml-2"><Clock className="w-3 h-3 text-white" /></span>}
+      {isApproved  && <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0 ml-2"><CheckCircle2 className="w-3 h-3 text-white" /></span>}
+      {isCancelled && <span className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 ml-2"><XCircle className="w-3 h-3 text-white" /></span>}
+      {isSentBack  && <span className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0 ml-2"><RotateCcw className="w-3 h-3 text-white" /></span>}
+      {isPending   && <span className="w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center flex-shrink-0 ml-2"><Clock className="w-3 h-3 text-white" /></span>}
     </div>
   );
 }
@@ -271,7 +282,7 @@ function RequestMoreDocsModal({ onClose }: { onClose: () => void }) {
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Note to Initiator <span className="text-red-400">*</span></label>
             <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4}
-              placeholder="e.g. Please upload the latest Form 20 and Certificate of Conformity..."
+              placeholder="Enter instructions for the initiator..."
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10" />
           </div>
         </div>
@@ -528,7 +539,7 @@ function LegalGMPageContent() {
           id: i + 1,
           actor: a.approverName || a.role,
           role: ROLE_LABEL[a.role] ?? a.role,
-          action: a.status === 'APPROVED' ? 'Approved' : a.status === 'SENT_BACK' ? 'Sent Back' : 'Cancelled',
+          action: ({'APPROVED':'Approved','OK_TO_PROCEED':'OK to Proceed','SENT_BACK':'Sent Back','CANCELLED':'Cancelled','SUBMIT_TO_LEGAL_GM':'Submitted to Legal GM','SUBMIT_TO_LEGAL_OFFICER':'Submitted to Legal Officer','RETURNED_TO_INITIATOR':'Returned to Initiator','COMPLETED':'Completed'} as Record<string,string>)[a.status as string] ?? a.status,
           comment: a.comment ?? undefined,
           timestamp: fmtDate(a.actionDate),
           _sortKey: new Date(a.actionDate || 0).getTime(),
@@ -799,31 +810,74 @@ function LegalGMPageContent() {
             </div>
             <div className="px-6 py-6 space-y-5">
               <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Company Code" value={submission.companyCode} />
-                <ReadField label="Title" value={submission.title} />
+                <ReadField label="Company Code (Hirer)" value={submission.companyCode} />
+                <ReadField label="SAP Cost Centre" value={submission.sapCostCenter} />
               </div>
-              <SectionDivider>Parties to the Agreement</SectionDivider>
-              <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <div className="grid grid-cols-2 gap-0 bg-slate-50 border-b border-slate-200">
-                  <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Type</div>
-                  <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-l border-slate-200">Name of the Party</div>
-                </div>
-                {submission.parties.map((p, i) => (
-                  <div key={i} className={`grid grid-cols-2 ${i < submission.parties.length - 1 ? 'border-b border-slate-100' : ''}`}>
-                    <div className="px-3.5 py-2.5 text-sm text-slate-700">{p.type}</div>
-                    <div className="px-3.5 py-2.5 text-sm text-slate-700 border-l border-slate-100 font-medium">{p.name}</div>
+              {(() => {
+                const ownerParty = submission.parties[0];
+                return (
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Name of Vehicle Owner</label>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-[11px] text-slate-400 font-semibold mb-1.5">Type</p>
+                        <div className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700">{ownerParty?.type || '—'}</div>
+                      </div>
+                      <div>
+                        <p className="text-[11px] text-slate-400 font-semibold mb-1.5">Name of the Party</p>
+                        <div className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700 font-medium">{ownerParty?.name || '—'}</div>
+                      </div>
+                    </div>
                   </div>
-                ))}
-              </div>
-              <SectionDivider>Agreement Details</SectionDivider>
-              <ReadField label="SAP Cost Center" value={submission.sapCostCenter} />
-              <ReadField label="Scope of Agreement" value={submission.scopeOfAgreement} multiline />
-              <ReadField label="Term" value={submission.term} multiline />
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Value (LKR)" value={submission.value} />
-                <ReadField label="Remarks" value={submission.remarks || ''} />
-              </div>
-              <ReadField label="Initiator Comments" value={submission.initiatorComments || ''} />
+                );
+              })()}
+              {/* placeholder to continue below */}
+              {(() => {
+                const sc = (() => { try { return JSON.parse(submission.scopeOfAgreement || '{}'); } catch { return {} as Record<string,string>; } })();
+                return (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="NIC No" value={sc.nicNo || ''} />
+                      <ReadField label="Address" value={sc.address || ''} />
+                    </div>
+                    <ReadField label="Contact No" value={sc.contactNo || ''} />
+
+                    <SectionDivider>Vehicle Details</SectionDivider>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Vehicle No" value={sc.vehicleNo || ''} />
+                      <ReadField label="Make" value={sc.make || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Model" value={sc.model || ''} />
+                      <ReadField label="Chassis No" value={sc.chassisNo || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Term of Rent" value={sc.termOfRent || ''} />
+                      <ReadField label="Commencing" value={sc.commencing || ''} />
+                    </div>
+
+                    <SectionDivider>Financial Details</SectionDivider>
+                    <ReadField label="Monthly Rental — excluding charges for the chauffeur Rs." value={sc.monthlyRentalExcl || ''} />
+                    <ReadField label="Monthly Rental — including charges for the chauffeur Rs." value={sc.monthlyRentalIncl || ''} />
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Refundable Deposit Rs." value={sc.refundableDeposit || ''} />
+                      <ReadField label="Maximum usage (km)" value={sc.maxUsage || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Excess km rate (Rs. per km)" value={sc.excessKmRate || ''} />
+                      <ReadField label="Working hours (am-pm)" value={sc.workingHours || ''} />
+                    </div>
+
+                    <SectionDivider>Renewal &amp; Additional Info</SectionDivider>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="If Renewal, Agreement No" value={sc.renewalAgreementNo || ''} />
+                      <ReadField label="Agreement Date" value={sc.agreementDate || ''} />
+                    </div>
+                    <ReadField label="Reason for Hiring" value={sc.reasonForHiring || ''} />
+                    <ReadField label="Special Conditions & Remarks" value={sc.specialConditions || ''} />
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>
@@ -858,10 +912,15 @@ function LegalGMPageContent() {
                 <div key={doc.id}
                   onClick={() => doc.fileUrl && window.open(doc.fileUrl, '_blank')}
                   className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
-                  ${doc.fileUrl ? 'bg-emerald-50 border-emerald-200 cursor-pointer hover:bg-emerald-100' : 'bg-slate-50 border-slate-100 cursor-default'}`}>
-                  <span className="text-[11px] text-slate-600 flex-1 mr-2 leading-tight">
-                    <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}
-                  </span>
+                  ${doc.status === 'ATTENTION' ? 'bg-yellow-50 border-yellow-200 cursor-pointer hover:bg-yellow-100' :
+                    doc.status === 'RESUBMIT'  ? 'bg-red-50 border-red-200 cursor-pointer hover:bg-red-100' :
+                    doc.fileUrl ? 'bg-emerald-50 border-emerald-200 cursor-pointer hover:bg-emerald-100' : 'bg-slate-50 border-slate-100 cursor-default'}`}>
+                  <div className="flex-1 mr-2 min-w-0">
+                    <span className="text-[11px] text-slate-600 leading-tight block">
+                      <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}
+                    </span>
+                    {doc.status !== 'NONE' && <StatusBadge status={doc.status} />}
+                  </div>
                   {doc.fileUrl
                     ? <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />
                     : <Paperclip className="w-4 h-4 text-slate-300 flex-shrink-0" />}
@@ -907,7 +966,12 @@ function LegalGMPageContent() {
               ) : undefined
             }>
             <div className="px-4 py-3 divide-y divide-slate-100">
-              {submission.approvals.map((a) => (
+              {Object.values(
+                submission.approvals.reduce<Record<string, typeof submission.approvals[0]>>((acc, a) => {
+                  acc[a.role] = a;
+                  return acc;
+                }, {})
+              ).map((a) => (
                 <ApproverRow key={a.role} label={ROLE_LABEL[a.role] ?? a.role} name={a.approverName} status={a.status} />
               ))}
               {specialApprovers.length > 0 && (
@@ -972,7 +1036,7 @@ function LegalGMPageContent() {
               <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-2 flex-1">
                 <div className="flex-1 min-w-0">
                   <p className="text-[9px] text-slate-400 uppercase tracking-wider">Assigned Legal Officer</p>
-                  <p className="text-xs font-bold text-[#17293E] truncate">{assignedOfficer.name || '—'}</p>
+                  <p className="text-xs font-bold text-[#17293E] truncate">{assignedOfficer.name?.split(' ')[0] || '—'}</p>
                 </div>
                 <button onClick={() => setShowReassign(true)} disabled={isActing || gmAlreadyActed}
                     className="text-[11px] font-bold px-2.5 py-1 rounded-lg text-white flex-shrink-0 transition-all active:scale-95 disabled:opacity-50"
@@ -994,7 +1058,14 @@ function LegalGMPageContent() {
                 style={{ background: 'linear-gradient(135deg, #f97316, #ea580c)' }}>
                 Send Back
               </button>
-              <button onClick={() => setShowConfirmAction('approve')} disabled={isActing || gmAlreadyActed}
+              <button onClick={() => {
+                if (isInitial && !assignedOfficer.id && !assignedOfficer.name) {
+                  setApiError('A Legal Officer must be assigned before proceeding. Please assign one using the Reassign button.');
+                  return;
+                }
+                setApiError('');
+                setShowConfirmAction('approve');
+              }} disabled={isActing || gmAlreadyActed}
                 className="flex-1 py-3 rounded-xl font-bold text-sm text-white transition-all active:scale-95 shadow-lg shadow-emerald-500/20 disabled:opacity-70 flex items-center justify-center gap-1"
                 style={{ background: 'linear-gradient(135deg, #22c55e, #16a34a)' }}>
                 {isActing ? <Loader2 className="w-4 h-4 animate-spin" /> : isInitial ? 'OK to Proceed' : 'Approve'}

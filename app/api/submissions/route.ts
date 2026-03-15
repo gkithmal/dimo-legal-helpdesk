@@ -3,6 +3,16 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { z } from 'zod';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+
+const SubmissionPostSchema = z.object({
+  formId:           z.number().int().min(1).max(10),
+  title:            z.string().min(1).max(500),
+  companyCode:      z.string().min(1),
+  initiatorId:      z.string().min(1),
+  scopeOfAgreement: z.string().optional().default(''),
+}).catchall(z.any());
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -67,9 +77,14 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
 
+    const { limited, retryAfter } = checkRateLimit(getClientIp(req), 'submissions-post', { max: 30, windowMs: 60_000 });
+    if (limited) return NextResponse.json({ success: false, error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': String(retryAfter) } });
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    const body = await req.json();
+    const raw = await req.json();
+    const parsed = SubmissionPostSchema.safeParse(raw);
+    if (!parsed.success) return NextResponse.json({ success: false, error: 'Invalid request', details: parsed.error.issues }, { status: 400 });
+    const body = parsed.data;
     const {
       formId,
       formName,
@@ -114,15 +129,34 @@ export async function POST(req: NextRequest) {
     }
 
     const contractValue = lkrValue ?? value ?? '0';
+
+    // ─── Resolve name→ID if a name string was passed instead of a UUID ───────
+    // Handles edge cases where two users share the same name by filtering by role
+    async function resolveUserId(value: string | undefined, role: string): Promise<string> {
+      if (!value) return '';
+      // Try by ID first (happy path)
+      const byId = await prisma.user.findUnique({ where: { id: value }, select: { id: true } });
+      if (byId) return byId.id;
+      // Fallback: look up by name, scoped to the expected role
+      const byName = await prisma.user.findFirst({ where: { name: value, role, isActive: true }, select: { id: true } });
+      return byName?.id || value;
+    }
+
+    const [resolvedBumId, resolvedFbpId, resolvedClusterHeadId] = await Promise.all([
+      resolveUserId(bumId, 'BUM'),
+      resolveUserId(fbpId, 'FBP'),
+      resolveUserId(clusterHeadId, 'CLUSTER_HEAD'),
+    ]);
+
     // ─── Resolve Approver Names ───
     const [bumUser, fbpUser, clusterUser] = await Promise.all([
-      bumId ? prisma.user.findUnique({ where: { id: bumId }, select: { name: true } }) : null,
-      fbpId ? prisma.user.findUnique({ where: { id: fbpId }, select: { name: true } }) : null,
-      clusterHeadId ? prisma.user.findUnique({ where: { id: clusterHeadId }, select: { name: true } }) : null,
+      resolvedBumId ? prisma.user.findUnique({ where: { id: resolvedBumId }, select: { name: true } }) : null,
+      resolvedFbpId ? prisma.user.findUnique({ where: { id: resolvedFbpId }, select: { name: true } }) : null,
+      resolvedClusterHeadId ? prisma.user.findUnique({ where: { id: resolvedClusterHeadId }, select: { name: true } }) : null,
     ]);
-    const bumName = bumUser?.name || bumId || '';
-    const fbpName = fbpUser?.name || fbpId || '';
-    const clusterName = clusterUser?.name || clusterHeadId || '';
+    const bumName = bumUser?.name || resolvedBumId || '';
+    const fbpName = fbpUser?.name || resolvedFbpId || '';
+    const clusterName = clusterUser?.name || resolvedClusterHeadId || '';
 
     // ─── Generate Unique Submission Number (Transaction-Based) ───
     const today = new Date();
@@ -263,6 +297,17 @@ export async function POST(req: NextRequest) {
             if (!seen.has(label)) { seen.add(label); documentsData.push({ label, type, status: 'NONE' }); }
           });
         });
+      } else if ((formId || 1) === 9) {
+        // ── Form 9: Approval for Purchasing of a Premises ──
+        const FORM9_BASE = [
+          { label: 'Title Deed', type: 'required' },
+          { label: 'Plan', type: 'required' },
+          { label: "Owner's Letter", type: 'required' },
+          { label: 'Extracts', type: 'required' },
+        ];
+        FORM9_BASE.forEach(d => {
+          if (!seen.has(d.label)) { seen.add(d.label); documentsData.push({ label: d.label, type: d.type, status: 'NONE' }); }
+        });
       } else if (formConfig?.docs?.length) {
         formConfig.docs.forEach((doc) => {
           const normalizedType = doc.type.replace('-', ' ');
@@ -297,6 +342,8 @@ export async function POST(req: NextRequest) {
       if ((formId || 1) === 7) {
         approvalsData.push({ role: 'BUM',             approverName: bumId || '', approverEmail: bumId || '', status: 'PENDING' });
         approvalsData.push({ role: 'GENERAL_MANAGER', approverName: gmId  || '', approverEmail: gmId  || '', status: 'PENDING' });
+      } else if ((formId || 1) === 9) {
+        // Form 9 has no parallel BUM/FBP/CH approvals — workflow is entirely through Legal GM
       } else {
         approvalsData.push({ role: 'BUM', approverName: bumName, approverEmail: '', status: 'PENDING' });
         approvalsData.push({ role: 'FBP', approverName: fbpName, approverEmail: '', status: 'PENDING' });
@@ -329,9 +376,9 @@ export async function POST(req: NextRequest) {
           isResubmission: isResubmission || false,
           loStage: (formId === 9 ? 'F9_PENDING_ASSIGNMENT' : formId === 2 ? 'PENDING_CEO' : formId === 1 ? 'PENDING_GM' : 'PENDING_LEGAL_GM'),
           legalGmStage: 'INITIAL_REVIEW',
-          bumId: bumId || null,
-          fbpId: fbpId || null,
-          clusterHeadId: clusterHeadId || null,
+          bumId: resolvedBumId || null,
+          fbpId: resolvedFbpId || null,
+          clusterHeadId: resolvedClusterHeadId || null,
           ...(formId === 7 && {
             f7AgreementRefNo:           f7AgreementRefNo           || null,
             f7AgreementDate:            f7AgreementDate            || null,

@@ -9,13 +9,14 @@ import {
   LogOut, Home, Lightbulb, Search, Settings, User,
   ArrowLeft, CheckCircle2, FileText, Clock, XCircle,
   RotateCcw, Send, Paperclip, Plus, ChevronDown, Eye,
-  AlertCircle, Upload, X, Calendar, Loader2,
+  AlertCircle, Upload, X, Loader2,
 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type LOStage = 'PENDING_GM' | 'REASSIGNED' | 'ACTIVE' | 'POST_GM_APPROVAL';
-type DocStatus = 'NONE' | 'OK' | 'ATTENTION' | 'RESUBMIT';
+type DocStatus = 'NONE' | 'OK' | 'ATTENTION' | 'RESUBMIT' | 'UPLOADED';
 
 type RequiredDoc = { id: string; label: string; status: DocStatus; hasFile: boolean; fileUrl?: string | null; comment?: string };
 type PreparedDoc = { id: string; name: string; type: 'initial' | 'final'; fileUrl?: string | null };
@@ -62,7 +63,7 @@ const DEPT_APPROVERS: Record<string, string[]> = {
   'IT Department':                      ['ranjan.gunaw@dimolanka.com'],
 };
 
-const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head' };
+const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head', CEO: 'CEO', LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -98,6 +99,7 @@ function SectionDivider({ children }: { children: React.ReactNode }) {
 }
 
 function DocStatusIcon({ status }: { status: DocStatus }) {
+  if (status === 'UPLOADED')  return <span className="w-4 h-4 rounded-full bg-emerald-400 flex items-center justify-center"><Paperclip className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'OK')        return <span className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center"><CheckCircle2 className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'ATTENTION') return <span className="w-4 h-4 rounded-full bg-yellow-400 flex items-center justify-center"><AlertCircle className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'RESUBMIT')  return <span className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center"><XCircle className="w-2.5 h-2.5 text-white" /></span>;
@@ -135,7 +137,22 @@ function AttachmentPreviewPage({ doc, canAct, onSave, onBack }: {
           </div>
           <div className="flex-1 overflow-hidden">
             {doc.fileUrl ? (
-              <iframe src={doc.fileUrl} className="w-full h-full border-0" title={doc.label} />
+              /\.(png|jpe?g|gif|webp|svg)$/i.test(doc.fileUrl) ? (
+                <div className="w-full h-full flex items-center justify-center bg-slate-50 p-4">
+                  <img src={doc.fileUrl} alt={doc.label} className="max-w-full max-h-full object-contain rounded-lg shadow" />
+                </div>
+              ) : (
+                <object data={doc.fileUrl} type="application/pdf" className="w-full h-full border-0">
+                  <div className="flex flex-col items-center justify-center h-full gap-3 bg-slate-50">
+                    <FileText className="w-16 h-16 text-slate-200" />
+                    <p className="text-sm font-medium text-slate-400">Cannot preview this file.</p>
+                    <a href={doc.fileUrl} target="_blank" rel="noreferrer"
+                      className="px-4 py-2 rounded-lg bg-[#1A438A] text-white text-xs font-bold hover:bg-[#1e5aad] transition-colors">
+                      Open File
+                    </a>
+                  </div>
+                </object>
+              )
             ) : (
               <div className="flex flex-col items-center justify-center h-full gap-3 bg-slate-50">
                 <FileText className="w-16 h-16 text-slate-200" />
@@ -296,7 +313,7 @@ function RequestMoreDocsModal({ onClose, submissionId }: { onClose: () => void; 
         </div>
         <div className="p-5">
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4}
-            placeholder="e.g. Please upload the latest Form 20..."
+            placeholder="Enter instructions for the initiator..."
             className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:border-[#1A438A]" />
         </div>
         <div className="flex gap-3 px-6 pb-5">
@@ -423,7 +440,7 @@ function AddDocumentModal({ onAdd, onClose }: { onAdd: (name: string, type: 'ini
         <div className="p-5 space-y-4">
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Document Name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Initial Draft"
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter document name..."
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A]" />
           </div>
           <div>
@@ -592,7 +609,7 @@ function Form2FinalizationModal({ submissionNo, submissionId, onClose, onComplet
           </div>
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Reference Number <span className="text-red-400">*</span></label>
-            <input type="text" value={referenceNo} onChange={e => setReferenceNo(e.target.value)} placeholder="e.g. LHD-REF-2026-001"
+            <input type="text" value={referenceNo} onChange={e => setReferenceNo(e.target.value)} placeholder="Enter reference number..."
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10" />
           </div>
           <div>
@@ -711,11 +728,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
             {/* Registered Date */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Registered Date</label>
-              <div className="relative">
-                <input type="date" value={fields.registeredDate || ''} onChange={(e) => set('registeredDate', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <DatePicker value={fields.registeredDate || ''} onChange={(v) => set('registeredDate', v)} />
             </div>
             {/* Legal dept ref */}
             <div>
@@ -726,11 +739,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
             {/* Date of execution */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Date of execution</label>
-              <div className="relative">
-                <input type="date" value={fields.dateOfExecution || ''} onChange={(e) => set('dateOfExecution', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <DatePicker value={fields.dateOfExecution || ''} onChange={(v) => set('dateOfExecution', v)} />
             </div>
             {/* Date of expiration */}
             <div>
@@ -741,11 +750,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
                 <input type="radio" id="expiry-date" name="expiry" checked={fields.dateOfExpiration !== 'indefinite'} onChange={() => set('dateOfExpiration', '')} className="accent-[#1A438A] ml-2" />
               </div>
               {fields.dateOfExpiration !== 'indefinite' && (
-                <div className="relative">
-                  <input type="date" value={fields.dateOfExpiration || ''} onChange={(e) => set('dateOfExpiration', e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
+                <DatePicker value={fields.dateOfExpiration || ''} onChange={(v) => set('dateOfExpiration', v)} />
               )}
             </div>
             {/* Directors executed */}
@@ -768,11 +773,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
             {/* Consideration */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Consideration</label>
-              <div className="relative">
-                <input type="date" value={fields.consideration || ''} onChange={(e) => set('consideration', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <DatePicker value={fields.consideration || ''} onChange={(v) => set('consideration', v)} />
             </div>
             {/* Reviewed by */}
             <div>
@@ -1038,12 +1039,12 @@ function LegalOfficerPageContent() {
 
   const postCommentToAPI = async (text: string) => {
     if (!submissionId) return;
-    fetch(`/api/submissions/${submissionId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ authorName: submission?.assignedLegalOfficer || "Legal Officer", authorRole: "LEGAL_OFFICER", text }) });
+    fetch(`/api/submissions/${submissionId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ authorName: session?.user?.name || "Legal Officer", authorRole: "LEGAL_OFFICER", text }) });
   };
 
   const postComment = () => {
     if (!commentInput.trim()) return;
-    setComments((prev) => [...prev, { id: Date.now(), author: 'Me', role: submission?.assignedLegalOfficer || 'Legal Officer', avatar: 'S', text: commentInput.trim(), time: 'Just now', side: 'right' }]);
+    setComments((prev) => [...prev, { id: Date.now(), author: 'Me', role: session?.user?.name || 'Legal Officer', avatar: 'S', text: commentInput.trim(), time: 'Just now', side: 'right' }]);
     setCommentInput('');
   };
 
@@ -1374,6 +1375,7 @@ function LegalOfficerPageContent() {
                     ${doc.status === 'ATTENTION' ? 'bg-yellow-50 border-yellow-300'
                     : doc.status === 'RESUBMIT'  ? 'bg-red-50 border-red-200'
                     : doc.status === 'OK'         ? 'bg-emerald-50 border-emerald-200'
+                    : doc.status === 'UPLOADED'    ? 'bg-emerald-50 border-emerald-200'
                     : doc.hasFile                 ? 'bg-blue-50 border-blue-200'
                     : 'bg-slate-50 border-slate-100 hover:border-[#1A438A]/20'}`}>
                   <span className={`text-[11px] flex-1 mr-2 leading-tight
@@ -1441,16 +1443,29 @@ function LegalOfficerPageContent() {
               )}
             </div>
             <div className="px-4 py-3 divide-y divide-slate-100">
-              {submission.approvals.map((a) => (
-                <div key={a.id} className="flex items-center justify-between py-2">
+              {Object.values(
+                submission.approvals.reduce<Record<string, typeof submission.approvals[0]>>((acc, a) => {
+                  acc[a.role] = a;
+                  return acc;
+                }, {})
+              ).map((a) => {
+                const isApproved = a.status === 'APPROVED' || a.status === 'OK_TO_PROCEED' || a.status === 'COMPLETED' || a.status === 'SUBMIT_TO_LEGAL_GM';
+                const isCancelled = a.status === 'CANCELLED';
+                const isSentBack = a.status === 'SENT_BACK' || a.status === 'RETURNED_TO_INITIATOR';
+                const isPending = a.status === 'PENDING';
+                return (
+                <div key={a.role} className="flex items-center justify-between py-2">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <span className="text-[11px] font-bold text-slate-600 w-20 flex-shrink-0">{ROLE_LABEL[a.role] ?? a.role}</span>
                     <span className="text-[11px] text-slate-500 truncate">{a.approverName || a.approverEmail}</span>
                   </div>
-                  {a.status === 'APPROVED' && <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0 ml-2"><CheckCircle2 className="w-3 h-3 text-white" /></span>}
-                  {a.status === 'PENDING'  && <span className="w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center flex-shrink-0 ml-2"><Clock className="w-3 h-3 text-white" /></span>}
+                  {isApproved  && <span className="w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center flex-shrink-0 ml-2"><CheckCircle2 className="w-3 h-3 text-white" /></span>}
+                  {isCancelled && <span className="w-5 h-5 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 ml-2"><XCircle className="w-3 h-3 text-white" /></span>}
+                  {isSentBack  && <span className="w-5 h-5 rounded-full bg-orange-500 flex items-center justify-center flex-shrink-0 ml-2"><RotateCcw className="w-3 h-3 text-white" /></span>}
+                  {isPending   && <span className="w-5 h-5 rounded-full bg-yellow-400 flex items-center justify-center flex-shrink-0 ml-2"><Clock className="w-3 h-3 text-white" /></span>}
                 </div>
-              ))}
+                );
+              })}
               {specialApprovers.length > 0 && (
                 <div className="pt-2">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-[#AC9C2F] mb-2">Special Approvers</p>

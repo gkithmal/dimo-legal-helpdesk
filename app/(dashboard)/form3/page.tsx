@@ -7,8 +7,9 @@ import { ROUTES } from '@/lib/routes';
 import {
   X, Home, Lightbulb, Search, Settings, User,
   ArrowLeft, FileText, CheckCircle2, Paperclip, AlertCircle,
-  Send, Loader2, Calendar, Plus, Trash2, Upload, File, Eye,
+  Send, Loader2, Plus, Trash2, Upload, File, Eye,
 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AttachedFile { id: string; name: string; size: number; file: File; fileUrl?: string; }
@@ -119,8 +120,8 @@ function SelectField({ value, onChange, options, placeholder, disabled=false, ha
     </div>
   );
 }
-function ComboBox({ value, onChange, options, placeholder, disabled=false, hasError=false }: {
-  value: string; onChange: (v: string) => void; options: string[]; placeholder?: string; disabled?: boolean; hasError?: boolean;
+function ComboBox({ value, onChange, options, placeholder, disabled=false, hasError=false, openUp=false }: {
+  value: string; onChange: (v: string) => void; options: string[]; placeholder?: string; disabled?: boolean; hasError?: boolean; openUp?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -148,7 +149,7 @@ function ComboBox({ value, onChange, options, placeholder, disabled=false, hasEr
         </div>
       </div>
       {open && !disabled && (
-        <div className="absolute z-30 w-full bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden top-full mt-1.5 max-h-52 overflow-y-auto">
+        <div className={`absolute z-30 w-full bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-52 overflow-y-auto ${openUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'}`}>
           {filtered.length===0 ? <div className="px-3.5 py-4 text-center text-sm text-slate-400">No matches found</div>
           : filtered.map(opt => <button key={opt} type="button" onMouseDown={e=>{e.preventDefault();onChange(opt);setQuery('');setOpen(false);}}
               className={`w-full text-left px-3.5 py-2.5 text-sm transition-colors ${value===opt?'bg-[#1A438A] text-white font-medium':'text-slate-700 hover:bg-[#EEF3F8] hover:text-[#1A438A]'}`}>{opt}</button>)}
@@ -196,8 +197,7 @@ function UploadPopup({ docLabel, files, onAdd, onRemove, onClose, onConfirm, can
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white"><X className="w-4 h-4"/></button>
         </div>
-        {canRemove && (
-          <div className="p-5">
+        <div className="p-5">
             <div onDrop={e=>{e.preventDefault();setDragging(false);handleFiles(e.dataTransfer.files);}} onDragOver={e=>{e.preventDefault();setDragging(true);}} onDragLeave={()=>setDragging(false)} onClick={()=>inputRef.current?.click()}
               className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${dragging?'border-[#1A438A] bg-[#EEF3F8]':'border-slate-200 hover:border-[#4686B7] hover:bg-slate-50'}`}>
               <div className={`w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3 ${dragging?'bg-[#1A438A]':'bg-slate-100'}`}><Upload className={`w-6 h-6 ${dragging?'text-white':'text-slate-400'}`}/></div>
@@ -206,7 +206,6 @@ function UploadPopup({ docLabel, files, onAdd, onRemove, onClose, onConfirm, can
               <input ref={inputRef} type="file" multiple className="hidden" onChange={e=>handleFiles(e.target.files)}/>
             </div>
           </div>
-        )}
         {files.length > 0 && (
           <div className="px-5 pb-2">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Attached ({files.length})</p>
@@ -438,6 +437,7 @@ function Form3PageContent() {
   const [showLog, setShowLog] = useState(false);
   const [showInstructions, setShowInstructions] = useState(false);
   const [instructionsText, setInstructionsText] = useState('');
+  const [formConfigDocs, setFormConfigDocs] = useState<{ id: string; label: string; type: string; isRequired: boolean }[]>([]);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [uploadPopup, setUploadPopup] = useState<{docKey: string; docLabel: string; docId: string}|null>(null);
   const [uploadingDoc, setUploadingDoc] = useState<string|null>(null);
@@ -487,6 +487,7 @@ function Form3PageContent() {
       if (data.success) {
         const config = data.data.find((c: any) => c.formId === 3);
         if (config?.instructions) setInstructionsText(config.instructions);
+        if (config?.docs?.length) setFormConfigDocs(config.docs);
       }
     }).catch(()=>{});
     // Load company codes and cost centers
@@ -541,7 +542,7 @@ function Form3PageContent() {
         { id:0, actor:'System', role:'System', action:'Submission created', timestamp: fmt(s.createdAt) },
         ...(s.approvals||[]).filter((a: any)=>a.actionDate).map((a: any,i: number)=>({
           id:i+1, actor:a.approverName||a.role, role:a.role,
-          action: a.status==='APPROVED'?'Approved':a.status==='SENT_BACK'?'Sent Back':'Cancelled',
+          action: ({APPROVED:'Approved',OK_TO_PROCEED:'OK to Proceed',SENT_BACK:'Sent Back',CANCELLED:'Cancelled',SUBMIT_TO_LEGAL_GM:'Submitted to Legal GM',SUBMIT_TO_LEGAL_OFFICER:'Submitted to Legal Officer',RETURNED_TO_INITIATOR:'Returned to Initiator',COMPLETED:'Completed'} as Record<string,string>)[a.status] ?? a.status,
           timestamp: fmt(a.actionDate),
         })),
         ...(s.comments||[]).map((c: any,i: number)=>({ id:1000+i, actor:c.authorName, role:c.authorRole, action:`Comment: "${c.text}"`, timestamp:fmt(c.createdAt) })),
@@ -560,11 +561,15 @@ function Form3PageContent() {
     }).catch(err=>console.error('Failed to load:', err));
   }, [mode, submissionId]);
 
-  // ── Required docs based on customer type ──
-  const requiredDocs: { label: string; key: string }[] = [
-    ...(customerType ? FORM3_DOCS_BY_TYPE[customerType]||[] : []).map(l=>({label:l,key:l})),
-    ...FORM3_DOCS_BASE.map(l=>({label:l,key:l})),
-  ];
+  // ── Required docs — from settings if configured, else fall back to hardcoded ──
+  const requiredDocs: { id: string; label: string; key: string; isRequired: boolean }[] = formConfigDocs.length > 0
+    ? formConfigDocs
+        .filter(d => d.type === 'Common' || !customerType || d.type === customerType || d.type.replace('-',' ') === customerType)
+        .map(d => ({ id: d.id, label: d.label, key: d.label, isRequired: d.isRequired }))
+    : [
+        ...(customerType ? FORM3_DOCS_BY_TYPE[customerType]||[] : []).map(l=>({id:"",label:l,key:l,isRequired:true})),
+        ...FORM3_DOCS_BASE.map(l=>({id:"",label:l,key:l,isRequired:true})),
+      ];
 
   // ── Validation ──
   const validate = (): string[] => {
@@ -652,6 +657,18 @@ function Form3PageContent() {
           }
         }
         await Promise.all(uploads);
+
+        // Re-link already-uploaded files (fileUrl set) to new submission doc IDs
+        for (const [docKey, files] of Object.entries(docFilesRef.current)) {
+          for (const f of files as AttachedFile[]) {
+            if (f.fileUrl) {
+              const docId = docLabelToId[docKey]||'';
+              if (docId) {
+                await fetch(`/api/submissions/${data.data.id}`,{ method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({documentId:docId,fileUrl:f.fileUrl,documentStatus:'UPLOADED'}) });
+              }
+            }
+          }
+        }
       }
       if (asDraft) { router.push(ROUTES.HOME); }
       else if (mode==='resubmit') { router.push(ROUTES.HOME); }
@@ -685,7 +702,13 @@ function Form3PageContent() {
     if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 3;
     if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 4;
     if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
-    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 5;
+    if (submissionStatus === 'COMPLETED') return 5;
+    if (submissionStatus === 'CANCELLED') {
+      if (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION') return 5;
+      if (loStage === 'REVIEW_FOR_GM' || loStage === 'SUBMIT_TO_LEGAL_GM') return 4;
+      if (loStage === 'INITIAL_REVIEW' || loStage === 'ACTIVE' || loStage === 'ASSIGN_COURT_OFFICER') return 3;
+      return 1;
+    }
     return 1;
   })();
 
@@ -754,14 +777,7 @@ function Form3PageContent() {
               {/* Letter of Demand Date */}
               <div>
                 <FieldLabel required>Letter of Demand Sent Date</FieldLabel>
-                <div className="relative">
-                  <input type="date" value={demandDate} onChange={e=>setDemandDate(e.target.value)} disabled={isReadOnly}
-                    className={`w-full px-3.5 py-2.5 rounded-lg border text-sm transition-all duration-150
-                      ${isReadOnly?'bg-slate-50 border-slate-200 text-slate-500 cursor-not-allowed'
-                      : hasError('demand')?'bg-white border-red-400 ring-2 ring-red-400/10 focus:outline-none'
-                      :'bg-white border-slate-200 text-slate-800 hover:border-[#4686B7] focus:outline-none focus:border-[#1A438A] focus:ring-2 focus:ring-[#1A438A]/10'}`}/>
-                  <Calendar className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none"/>
-                </div>
+                <DatePicker value={demandDate} onChange={setDemandDate} disabled={isReadOnly} hasError={hasError('demand')} />
                 <FieldError message={hasError('demand') ? 'Letter of Demand Sent Date is required' : undefined}/>
               </div>
 
@@ -946,7 +962,7 @@ function Form3PageContent() {
                 return (
                   <div key={doc.key} className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all ${hasFiles?'bg-emerald-50 border-emerald-200':'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
                     <div className="flex-1 mr-2 min-w-0">
-                      <span className="text-[11px] text-slate-600 leading-tight block"><span className="font-bold text-slate-300 mr-1">{i+1}.</span>{doc.label}</span>
+                      <span className="text-[11px] text-slate-600 leading-tight flex items-center gap-1 flex-wrap"><span className="font-bold text-slate-300 mr-1">{i+1}.</span>{doc.label}{!doc.isRequired&&<span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-400">Optional</span>}</span>
                       {hasFiles&&<span className="text-[10px] text-emerald-600 font-semibold">{files.length} file{files.length>1?'s':''} attached</span>}
                     </div>
                     {canUploadDocs ? (
@@ -984,7 +1000,7 @@ function Form3PageContent() {
               </div>
               <div>
                 <FieldLabel required>FBP</FieldLabel>
-                <ComboBox value={fbp} onChange={setFbp} options={fbpOptions} placeholder="Type or select FBP..." disabled={isReadOnly} hasError={hasError('fbp')}/>
+                <ComboBox value={fbp} onChange={setFbp} options={fbpOptions} placeholder="Type or select FBP..." disabled={isReadOnly} hasError={hasError('fbp')} openUp/>
                 <FieldError message={hasError('fbp') ? 'FBP is required' : undefined}/>
               </div>
             </div>

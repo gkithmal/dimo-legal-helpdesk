@@ -459,7 +459,7 @@ function Form4ApprovalPageContent() {
   };
 
   // ── Derived ──
-  const approvals = submission?.approvals ?? [];
+  const approvals = Object.values((submission?.approvals ?? []).reduce<Record<string, NonNullable<typeof submission>['approvals'][0]>>((acc, a) => { acc[a.role] = a; return acc; }, {}));
   const myRecord = approvals.find((a) => a.role === currentUserRole);
   const alreadyActed = myRecord?.status !== 'PENDING';
   const overallStatus = getOverallStatus(approvals);
@@ -610,35 +610,80 @@ function Form4ApprovalPageContent() {
               <span className="text-[11px] font-bold uppercase tracking-widest text-[#17293E]">Submission Details</span>
             </div>
             <div className="px-6 py-6 space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Company Code" value={submission.companyCode} />
-                <ReadField label="Title" value={submission.title} />
-              </div>
+              {(() => {
+                const sc = (() => { try { return JSON.parse(submission.scopeOfAgreement || '{}'); } catch { return {} as Record<string,string>; } })();
+                const ownerParty = submission.parties[0];
+                return (
+                  <>
+                    {/* Row 1: Company Code + SAP Cost Centre */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Company Code (Hirer)" value={submission.companyCode} />
+                      <ReadField label="SAP Cost Centre" value={submission.sapCostCenter} />
+                    </div>
 
-              <SectionDivider>Parties to the Agreement</SectionDivider>
-              <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <div className="grid grid-cols-2 gap-0 bg-slate-50 border-b border-slate-200">
-                  <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Type</div>
-                  <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-l border-slate-200">Name of the Party</div>
-                </div>
-                {submission.parties.map((p, i) => (
-                  <div key={i} className={`grid grid-cols-2 gap-0 ${i < submission.parties.length - 1 ? 'border-b border-slate-100' : ''}`}>
-                    <div className="px-3.5 py-2.5 text-sm text-slate-700">{p.type}</div>
-                    <div className="px-3.5 py-2.5 text-sm text-slate-700 border-l border-slate-100 font-medium">{p.name}</div>
-                  </div>
-                ))}
-              </div>
+                    {/* Name of Vehicle Owner */}
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Name of Vehicle Owner</label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[11px] text-slate-400 font-semibold mb-1.5">Type</p>
+                          <div className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700">{ownerParty?.type || '—'}</div>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-slate-400 font-semibold mb-1.5">Name of the Party</p>
+                          <div className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700 font-medium">{ownerParty?.name || '—'}</div>
+                        </div>
+                      </div>
+                    </div>
 
-              <SectionDivider>Agreement Details</SectionDivider>
-              <ReadField label="SAP Cost Center" value={submission.sapCostCenter} />
-              <ReadField label="Scope of Agreement" value={submission.scopeOfAgreement} multiline />
-              <ReadField label="Term" value={submission.term} multiline />
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Value (LKR)" value={submission.value} />
-                <ReadField label="Remarks" value={submission.remarks || ''} />
-              </div>
-              <ReadField label="Initiator Comments" value={submission.initiatorComments || ''} />
-              <ReadField label="Legal Officer" value={submission.assignedLegalOfficer || ''} />
+                    {/* NIC + Address */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="NIC No" value={sc.nicNo || ''} />
+                      <ReadField label="Address" value={sc.address || ''} />
+                    </div>
+
+                    {/* Contact No */}
+                    <ReadField label="Contact No" value={sc.contactNo || ''} />
+
+                    <SectionDivider>Vehicle Details</SectionDivider>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Vehicle No" value={sc.vehicleNo || ''} />
+                      <ReadField label="Make" value={sc.make || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Model" value={sc.model || ''} />
+                      <ReadField label="Chassis No" value={sc.chassisNo || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Term of Rent" value={sc.termOfRent || ''} />
+                      <ReadField label="Commencing" value={sc.commencing || ''} />
+                    </div>
+
+                    <SectionDivider>Financial Details</SectionDivider>
+
+                    <ReadField label="Monthly Rental — excluding charges for the chauffeur Rs." value={sc.monthlyRentalExcl || ''} />
+                    <ReadField label="Monthly Rental — including charges for the chauffeur Rs." value={sc.monthlyRentalIncl || ''} />
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Refundable Deposit Rs." value={sc.refundableDeposit || ''} />
+                      <ReadField label="Maximum usage (km)" value={sc.maxUsage || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Excess km rate (Rs. per km)" value={sc.excessKmRate || ''} />
+                      <ReadField label="Working hours (am-pm)" value={sc.workingHours || ''} />
+                    </div>
+
+                    <SectionDivider>Renewal &amp; Additional Info</SectionDivider>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="If Renewal, Agreement No" value={sc.renewalAgreementNo || ''} />
+                      <ReadField label="Agreement Date" value={sc.agreementDate || ''} />
+                    </div>
+                    <ReadField label="Reason for Hiring" value={sc.reasonForHiring || ''} />
+                    <ReadField label="Special Conditions & Remarks" value={sc.specialConditions || ''} />
+                  </>
+                );
+              })()}
             </div>
           </div>
         </div>

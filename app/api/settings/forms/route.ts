@@ -8,6 +8,26 @@ export async function GET() {
   try {
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
+
+    // Ensure Form 9 config exists (auto-seed if missing)
+    await prisma.formConfig.upsert({
+      where: { formId: 9 },
+      create: {
+        formId: 9,
+        formName: 'Approval for Purchasing of a Premises',
+        instructions: 'Instructions for Approval for Purchasing Premises — to be configured.',
+        docs: {
+          create: [
+            { label: 'Title Deed', type: 'required', sortOrder: 0 },
+            { label: 'Plan', type: 'required', sortOrder: 1 },
+            { label: "Owner's Letter", type: 'required', sortOrder: 2 },
+            { label: 'Extracts', type: 'required', sortOrder: 3 },
+          ],
+        },
+      },
+      update: {},
+    });
+
     const configs = await prisma.formConfig.findMany({
       include: { docs: { orderBy: { sortOrder: 'asc' } } },
       orderBy: { formId: 'asc' },
@@ -35,8 +55,8 @@ export async function POST(req: NextRequest) {
         formName: `Form ${formId}`,
         instructions: instructions ?? '',
         docs: {
-          create: (docs || []).map((d: { label: string; type: string }, i: number) => ({
-            label: d.label, type: d.type, sortOrder: i,
+          create: (docs || []).map((d: { label: string; type: string; isRequired?: boolean }, i: number) => ({
+            label: d.label, type: d.type, isRequired: d.isRequired ?? true, sortOrder: i,
           })),
         },
       },
@@ -44,8 +64,8 @@ export async function POST(req: NextRequest) {
         instructions: instructions ?? '',
         docs: {
           deleteMany: {},
-          create: (docs || []).map((d: { label: string; type: string }, i: number) => ({
-            label: d.label, type: d.type, sortOrder: i,
+          create: (docs || []).map((d: { label: string; type: string; isRequired?: boolean }, i: number) => ({
+            label: d.label, type: d.type, isRequired: d.isRequired ?? true, sortOrder: i,
           })),
         },
       },

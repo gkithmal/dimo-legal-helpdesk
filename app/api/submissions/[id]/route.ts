@@ -12,16 +12,18 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
       include: { parties: true, approvals: true, documents: true, comments: { orderBy: { createdAt: 'asc' } }, specialApprovers: true },
     });
     if (!submission) return NextResponse.json({ success: false, error: 'Not found' }, { status: 404 });
-    // Resolve assignedLegalOfficer UUID to name
-    let legalOfficerName = null;
-    if (submission.assignedLegalOfficer) {
-      const officer = await prisma.user.findUnique({
-        where: { id: submission.assignedLegalOfficer },
-        select: { name: true },
-      });
-      legalOfficerName = officer?.name || null;
-    }
-    return NextResponse.json({ success: true, data: { ...submission, legalOfficerName } });
+    // Resolve assignedLegalOfficer and courtOfficerId UUIDs to names
+    const [legalOfficerUser, courtOfficerUser] = await Promise.all([
+      submission.assignedLegalOfficer
+        ? prisma.user.findUnique({ where: { id: submission.assignedLegalOfficer }, select: { name: true } })
+        : null,
+      submission.courtOfficerId
+        ? prisma.user.findUnique({ where: { id: submission.courtOfficerId }, select: { name: true } })
+        : null,
+    ]);
+    const legalOfficerName = legalOfficerUser?.name || null;
+    const courtOfficerName = courtOfficerUser?.name || null;
+    return NextResponse.json({ success: true, data: { ...submission, legalOfficerName, courtOfficerName } });
   } catch (error) {
     return NextResponse.json({ success: false, error: 'Failed to fetch' }, { status: 500 });
   }
@@ -34,6 +36,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
     const body = await req.json();
     const { status, loStage, legalGmStage, assignedLegalOfficer, documentId, fileUrl, documentStatus, scopeOfAgreement,
+      bumId, fbpId, clusterHeadId,  // ← FIXED: added approver ID fields
       ouLegalReviewCompleted, ouRegisteredDate, ouLegalRefNumber, ouDateOfExecution, ouDateOfExpiration,
       ouDirectorsExecuted1, ouDirectorsExecuted2, ouConsideration, ouReviewedBy, ouRegisteredBy,
       ouSignedSupplierCode, ouRemarks, ouSavedAt, financeViewedAt,
@@ -81,6 +84,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const updated = await prisma.submission.update({
       where: { id: (await params).id },
       data: {
+        ...(bumId !== undefined && { bumId }),               // ← FIXED
+        ...(fbpId !== undefined && { fbpId }),               // ← FIXED
+        ...(clusterHeadId !== undefined && { clusterHeadId }), // ← FIXED
         ...(scopeOfAgreement !== undefined && { scopeOfAgreement }),
         ...(status && { status }),
         ...(loStage !== undefined && { loStage }),

@@ -9,13 +9,14 @@ import {
   LogOut, Home, Lightbulb, Search, Settings, User,
   ArrowLeft, CheckCircle2, FileText, Clock, XCircle,
   RotateCcw, Send, Paperclip, Plus, ChevronDown, Eye,
-  AlertCircle, Upload, X, Calendar, Loader2,
+  AlertCircle, Upload, X, Loader2,
 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type LOStage = 'PENDING_GM' | 'REASSIGNED' | 'ACTIVE' | 'POST_GM_APPROVAL';
-type DocStatus = 'NONE' | 'OK' | 'ATTENTION' | 'RESUBMIT';
+type DocStatus = 'NONE' | 'OK' | 'ATTENTION' | 'RESUBMIT' | 'UPLOADED';
 
 type RequiredDoc = { id: string; label: string; status: DocStatus; hasFile: boolean; fileUrl?: string | null; comment?: string };
 type PreparedDoc = { id: string; name: string; type: 'initial' | 'final'; fileUrl?: string | null };
@@ -46,29 +47,17 @@ type Submission = {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const DEPARTMENTS = [
-  'Corp Comm', 'HRD', 'Finance Department',
-  'Group Internal Audit & Compliance', 'Facilities Department',
-  'Supply Chain', 'IT Department',
-];
-const DEPT_APPROVERS: Record<string, string[]> = {
-  'Corp Comm':                          ['nimal.perera@dimolanka.com'],
-  'HRD':                                ['dilrukshi.kurukulasuriya@dimolanka.com'],
-  'Finance Department':                 ['malini.jayasekera@dimolanka.com'],
-  'Group Internal Audit & Compliance':  ['tharanga.bandara@dimolanka.com'],
-  'Facilities Department':              ['pradeep.senanayake@dimolanka.com'],
-  'Supply Chain':                       ['nuwan.rajapaksa@dimolanka.com'],
-  'IT Department':                      ['ranjan.gunaw@dimolanka.com'],
-};
-
-const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head' };
+const ROLE_LABEL: Record<string, string> = { BUM: 'BUM', FBP: 'FBP', CLUSTER_HEAD: 'Cluster Head', CEO: 'CEO', LEGAL_GM: 'Legal GM', LEGAL_OFFICER: 'Legal Officer' };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function mapLoStage(dbStage: string): LOStage {
-  if (dbStage === 'ACTIVE')           return 'ACTIVE';
-  if (dbStage === 'POST_GM_APPROVAL') return 'POST_GM_APPROVAL';
-  if (dbStage === 'REASSIGNED')       return 'REASSIGNED';
+  if (dbStage === 'ACTIVE')              return 'ACTIVE';
+  if (dbStage === 'INITIAL_REVIEW')      return 'ACTIVE';
+  if (dbStage === 'ASSIGN_COURT_OFFICER') return 'ACTIVE';
+  if (dbStage === 'POST_GM_APPROVAL')    return 'POST_GM_APPROVAL';
+  if (dbStage === 'FINALIZATION')         return 'POST_GM_APPROVAL';
+  if (dbStage === 'REASSIGNED')          return 'REASSIGNED';
   return 'PENDING_GM';
 }
 
@@ -94,6 +83,7 @@ function SectionDivider({ children }: { children: React.ReactNode }) {
 }
 
 function DocStatusIcon({ status }: { status: DocStatus }) {
+  if (status === 'UPLOADED')  return <span className="w-4 h-4 rounded-full bg-emerald-400 flex items-center justify-center"><Paperclip className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'OK')        return <span className="w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center"><CheckCircle2 className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'ATTENTION') return <span className="w-4 h-4 rounded-full bg-yellow-400 flex items-center justify-center"><AlertCircle className="w-2.5 h-2.5 text-white" /></span>;
   if (status === 'RESUBMIT')  return <span className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center"><XCircle className="w-2.5 h-2.5 text-white" /></span>;
@@ -131,7 +121,22 @@ function AttachmentPreviewPage({ doc, canAct, onSave, onBack }: {
           </div>
           <div className="flex-1 overflow-hidden">
             {doc.fileUrl ? (
-              <iframe src={doc.fileUrl} className="w-full h-full border-0" title={doc.label} />
+              /\.(png|jpe?g|gif|webp|svg)$/i.test(doc.fileUrl) ? (
+                <div className="w-full h-full flex items-center justify-center bg-slate-50 p-4">
+                  <img src={doc.fileUrl} alt={doc.label} className="max-w-full max-h-full object-contain rounded-lg shadow" />
+                </div>
+              ) : (
+                <object data={doc.fileUrl} type="application/pdf" className="w-full h-full border-0">
+                  <div className="flex flex-col items-center justify-center h-full gap-3 bg-slate-50">
+                    <FileText className="w-16 h-16 text-slate-200" />
+                    <p className="text-sm font-medium text-slate-400">Cannot preview this file.</p>
+                    <a href={doc.fileUrl} target="_blank" rel="noreferrer"
+                      className="px-4 py-2 rounded-lg bg-[#1A438A] text-white text-xs font-bold hover:bg-[#1e5aad] transition-colors">
+                      Open File
+                    </a>
+                  </div>
+                </object>
+              )
             ) : (
               <div className="flex flex-col items-center justify-center h-full gap-3 bg-slate-50">
                 <FileText className="w-16 h-16 text-slate-200" />
@@ -292,7 +297,7 @@ function RequestMoreDocsModal({ onClose, submissionId }: { onClose: () => void; 
         </div>
         <div className="p-5">
           <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={4}
-            placeholder="e.g. Please upload the latest Form 20..."
+            placeholder="Enter instructions for the initiator..."
             className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm resize-none focus:outline-none focus:border-[#1A438A]" />
         </div>
         <div className="flex gap-3 px-6 pb-5">
@@ -419,7 +424,7 @@ function AddDocumentModal({ onAdd, onClose }: { onAdd: (name: string, type: 'ini
         <div className="p-5 space-y-4">
           <div>
             <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1.5">Document Name</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Initial Draft"
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Enter document name..."
               className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 text-sm focus:outline-none focus:border-[#1A438A]" />
           </div>
           <div>
@@ -468,9 +473,9 @@ function AddDocumentModal({ onAdd, onClose }: { onAdd: (name: string, type: 'ini
   );
 }
 
-function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, initialFields }: {
+function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, initialFields, legalOfficerNames = [] }: {
   submissionNo: string; submissionId: string; onClose: () => void; onComplete: () => void;
-  initialFields?: Record<string, string>;
+  initialFields?: Record<string, string>; legalOfficerNames?: string[];
 }) {
   const [fields, setFields] = useState<Record<string, string>>(initialFields || { dateOfExpiration: 'indefinite' });
   const [modal, setModal]   = useState<'saveConfirm' | 'jobConfirm' | 'saveSuccess' | 'jobSuccess' | null>(null);
@@ -545,11 +550,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
             {/* Registered Date */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Registered Date</label>
-              <div className="relative">
-                <input type="date" value={fields.registeredDate || ''} onChange={(e) => set('registeredDate', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <DatePicker value={fields.registeredDate || ''} onChange={(v) => set('registeredDate', v)} />
             </div>
             {/* Legal dept ref */}
             <div>
@@ -560,11 +561,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
             {/* Date of execution */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Date of execution</label>
-              <div className="relative">
-                <input type="date" value={fields.dateOfExecution || ''} onChange={(e) => set('dateOfExecution', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <DatePicker value={fields.dateOfExecution || ''} onChange={(v) => set('dateOfExecution', v)} />
             </div>
             {/* Date of expiration */}
             <div>
@@ -575,11 +572,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
                 <input type="radio" id="expiry-date" name="expiry" checked={fields.dateOfExpiration !== 'indefinite'} onChange={() => set('dateOfExpiration', '')} className="accent-[#1A438A] ml-2" />
               </div>
               {fields.dateOfExpiration !== 'indefinite' && (
-                <div className="relative">
-                  <input type="date" value={fields.dateOfExpiration || ''} onChange={(e) => set('dateOfExpiration', e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                  <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                </div>
+                <DatePicker value={fields.dateOfExpiration || ''} onChange={(v) => set('dateOfExpiration', v)} />
               )}
             </div>
             {/* Directors executed */}
@@ -602,11 +595,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
             {/* Consideration */}
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Consideration</label>
-              <div className="relative">
-                <input type="date" value={fields.consideration || ''} onChange={(e) => set('consideration', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <DatePicker value={fields.consideration || ''} onChange={(v) => set('consideration', v)} />
             </div>
             {/* Reviewed by */}
             <div>
@@ -615,8 +604,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
                 <select value={fields.reviewedBy || ''} onChange={(e) => set('reviewedBy', e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none appearance-none pr-8 text-slate-600">
                   <option value="">Select...</option>
-                  <option>Sandalie Gomes</option>
-                  <option>Damayanthi Muhandiram</option>
+                  {legalOfficerNames.map(n => <option key={n}>{n}</option>)}
                 </select>
                 <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               </div>
@@ -628,8 +616,7 @@ function OfficialUseModal({ submissionNo, submissionId, onClose, onComplete, ini
                 <select value={fields.registeredBy || ''} onChange={(e) => set('registeredBy', e.target.value)}
                   className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none appearance-none pr-8 text-slate-600">
                   <option value="">Select...</option>
-                  <option>Sandalie Gomes</option>
-                  <option>Tharanga Punchihewa</option>
+                  {legalOfficerNames.map(n => <option key={n}>{n}</option>)}
                 </select>
                 <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               </div>
@@ -690,14 +677,21 @@ function LegalOfficerPageContent() {
   const [preparedDocs, setPreparedDocs] = useState<PreparedDoc[]>([]);
   const [specialApprovers, setSpecialApprovers] = useState<SpecialApprover[]>([]);
   const [availableSpecialApprovers, setAvailableSpecialApprovers] = useState<{ id: string; name: string; email: string; department: string }[]>([]);
+  const [legalOfficerNames, setLegalOfficerNames] = useState<string[]>([]);
   useEffect(() => {
     fetch('/api/users')
       .then(r => r.json())
       .then(d => {
-        if (d.success) setAvailableSpecialApprovers(
-          d.data.filter((u: any) => u.role === 'SPECIAL_APPROVER' && u.isActive && u.department)
-                .map((u: any) => ({ id: u.id, name: u.name, email: u.email, department: u.department }))
-        );
+        if (d.success) {
+          setAvailableSpecialApprovers(
+            d.data.filter((u: any) => u.role === 'SPECIAL_APPROVER' && u.isActive && u.department)
+                  .map((u: any) => ({ id: u.id, name: u.name, email: u.email, department: u.department }))
+          );
+          setLegalOfficerNames(
+            d.data.filter((u: any) => u.role === 'LEGAL_OFFICER' && u.isActive)
+                  .map((u: any) => u.name || u.email)
+          );
+        }
       }).catch(() => {});
   }, []);
   const [showSpecial, setShowSpecial] = useState(false);
@@ -873,12 +867,12 @@ function LegalOfficerPageContent() {
 
   const postCommentToAPI = async (text: string) => {
     if (!submissionId) return;
-    fetch(`/api/submissions/${submissionId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ authorName: submission?.assignedLegalOfficer || "Legal Officer", authorRole: "LEGAL_OFFICER", text }) });
+    fetch(`/api/submissions/${submissionId}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ authorName: session?.user?.name || "Legal Officer", authorRole: "LEGAL_OFFICER", text }) });
   };
 
   const postComment = () => {
     if (!commentInput.trim()) return;
-    setComments((prev) => [...prev, { id: Date.now(), author: 'Me', role: submission?.assignedLegalOfficer || 'Legal Officer', avatar: 'S', text: commentInput.trim(), time: 'Just now', side: 'right' }]);
+    setComments((prev) => [...prev, { id: Date.now(), author: 'Me', role: session?.user?.name || 'Legal Officer', avatar: 'S', text: commentInput.trim(), time: 'Just now', side: 'right' }]);
     postCommentToAPI(commentInput.trim());
     setCommentInput('');
   };
@@ -1066,31 +1060,74 @@ function LegalOfficerPageContent() {
               <span className="text-[11px] font-bold uppercase tracking-widest text-[#17293E]">Submission Details</span>
             </div>
             <div className="px-6 py-6 space-y-5">
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Company Code" value={submission.companyCode} />
-                <ReadField label="Title" value={submission.title} />
-              </div>
-              <SectionDivider>Parties to the Agreement</SectionDivider>
-              <div className="rounded-xl border border-slate-200 overflow-hidden">
-                <div className="grid grid-cols-2 gap-0 bg-slate-50 border-b border-slate-200">
-                  <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400">Type</div>
-                  <div className="px-3.5 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-l border-slate-200">Name of the Party</div>
-                </div>
-                {submission.parties.map((p, i) => (
-                  <div key={i} className={`grid grid-cols-2 ${i < submission.parties.length - 1 ? 'border-b border-slate-100' : ''}`}>
-                    <div className="px-3.5 py-2.5 text-sm text-slate-700">{p.type}</div>
-                    <div className="px-3.5 py-2.5 text-sm text-slate-700 border-l border-slate-100 font-medium">{p.name}</div>
-                  </div>
-                ))}
-              </div>
-              <SectionDivider>Agreement Details</SectionDivider>
-              <ReadField label="SAP Cost Center" value={submission.sapCostCenter} />
-              <ReadField label="Scope of Agreement" value={submission.scopeOfAgreement} multiline />
-              <ReadField label="Term" value={submission.term} multiline />
-              <div className="grid grid-cols-2 gap-4">
-                <ReadField label="Value (LKR)" value={submission.value} />
-                <ReadField label="Remarks" value={submission.remarks || ''} />
-              </div>
+              {(() => {
+                const sc = (() => { try { return JSON.parse(submission.scopeOfAgreement || '{}'); } catch { return {} as Record<string,string>; } })();
+                const ownerParty = submission.parties[0];
+                return (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Company Code (Hirer)" value={submission.companyCode} />
+                      <ReadField label="SAP Cost Centre" value={submission.sapCostCenter} />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Name of Vehicle Owner</label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <p className="text-[11px] text-slate-400 font-semibold mb-1.5">Type</p>
+                          <div className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700">{ownerParty?.type || '—'}</div>
+                        </div>
+                        <div>
+                          <p className="text-[11px] text-slate-400 font-semibold mb-1.5">Name of the Party</p>
+                          <div className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm text-slate-700 font-medium">{ownerParty?.name || '—'}</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="NIC No" value={sc.nicNo || ''} />
+                      <ReadField label="Address" value={sc.address || ''} />
+                    </div>
+                    <ReadField label="Contact No" value={sc.contactNo || ''} />
+
+                    <SectionDivider>Vehicle Details</SectionDivider>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Vehicle No" value={sc.vehicleNo || ''} />
+                      <ReadField label="Make" value={sc.make || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Model" value={sc.model || ''} />
+                      <ReadField label="Chassis No" value={sc.chassisNo || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Term of Rent" value={sc.termOfRent || ''} />
+                      <ReadField label="Commencing" value={sc.commencing || ''} />
+                    </div>
+
+                    <SectionDivider>Financial Details</SectionDivider>
+                    <ReadField label="Monthly Rental — excluding charges for the chauffeur Rs." value={sc.monthlyRentalExcl || ''} />
+                    <ReadField label="Monthly Rental — including charges for the chauffeur Rs." value={sc.monthlyRentalIncl || ''} />
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Refundable Deposit Rs." value={sc.refundableDeposit || ''} />
+                      <ReadField label="Maximum usage (km)" value={sc.maxUsage || ''} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="Excess km rate (Rs. per km)" value={sc.excessKmRate || ''} />
+                      <ReadField label="Working hours (am-pm)" value={sc.workingHours || ''} />
+                    </div>
+
+                    <SectionDivider>Renewal &amp; Additional Info</SectionDivider>
+                    <div className="grid grid-cols-2 gap-4">
+                      <ReadField label="If Renewal, Agreement No" value={sc.renewalAgreementNo || ''} />
+                      <ReadField label="Agreement Date" value={sc.agreementDate || ''} />
+                    </div>
+                    <ReadField label="Reason for Hiring" value={sc.reasonForHiring || ''} />
+                    <ReadField label="Special Conditions & Remarks" value={sc.specialConditions || ''} />
+                  </>
+                );
+              })()}
+
+              <ReadField label="Value (LKR)" value={submission.value} />
               <ReadField label="Initiator Comments" value={submission.initiatorComments || ''} />
             </div>
           </div>
@@ -1161,6 +1198,7 @@ function LegalOfficerPageContent() {
                     ${doc.status === 'ATTENTION' ? 'bg-yellow-50 border-yellow-300'
                     : doc.status === 'RESUBMIT'  ? 'bg-red-50 border-red-200'
                     : doc.status === 'OK'         ? 'bg-emerald-50 border-emerald-200'
+                    : doc.status === 'UPLOADED'    ? 'bg-emerald-50 border-emerald-200'
                     : 'bg-slate-50 border-slate-100 hover:border-[#1A438A]/20'}`}>
                   <span className={`text-[11px] flex-1 mr-2 leading-tight
                     ${doc.status === 'ATTENTION' ? 'text-yellow-800 font-semibold'
@@ -1417,6 +1455,7 @@ function LegalOfficerPageContent() {
         submissionId={submission.id}
         onClose={() => setShowOfficialUse(false)}
         onComplete={handleComplete}
+        legalOfficerNames={legalOfficerNames}
         initialFields={{
           dateOfExpiration: (submission as any).ouDateOfExpiration || 'indefinite',
           legalReviewCompleted: (submission as any).ouLegalReviewCompleted ? 'true' : '',

@@ -1,12 +1,8 @@
 import { type NextAuthOptions } from 'next-auth';
 import AzureADProvider from 'next-auth/providers/azure-ad';
 import CredentialsProvider from 'next-auth/providers/credentials';
-import { createHash } from 'crypto';
+import bcrypt from 'bcrypt';
 import { prisma } from '@/lib/prisma';
-
-function hashPassword(password: string) {
-  return createHash('sha256').update(password).digest('hex');
-}
 
 const azureProvider = process.env.AZURE_AD_CLIENT_ID ? [
   AzureADProvider({
@@ -31,7 +27,8 @@ export const authOptions: NextAuthOptions = {
             where: { email: credentials.email },
           });
           if (!user || !user.password) return null;
-          if (user.password !== hashPassword(credentials.password)) return null;
+          const passwordMatch = await bcrypt.compare(credentials.password, user.password);
+          if (!passwordMatch) return null;
           if (!user.isActive) return null;
           return { id: user.id, name: user.name ?? '', email: user.email, role: user.role };
         } catch (err) {

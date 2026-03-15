@@ -447,7 +447,7 @@ export default function SpecialApproverHomePage() {
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(17, 131, 183, 0.25)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(15, 34, 64, 0.55)')}>
                   <div className={`w-11 h-11 ${form.color} rounded-full flex items-center justify-center flex-shrink-0 shadow-lg`}><FileText className="w-5 h-5 text-white" /></div>
-                  <div className="text-left flex-1 ml-3 min-w-0"><h3 className="text-white text-sm font-bold mb-0.5 truncate">{form.title}</h3><p className="text-[#91ADC5] text-xs leading-tight line-clamp-2">{form.description}</p></div>
+                  <div className="text-left flex-1 ml-3 min-w-0"><h3 className="text-white text-base font-bold mb-0.5 truncate">{form.title}</h3><p className="text-[#91ADC5] text-[15px] leading-tight line-clamp-2">{form.description}</p></div>
                   <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/60 flex-shrink-0 ml-2 transition-colors" />
                 </button>
               ))}
@@ -465,7 +465,7 @@ export default function SpecialApproverHomePage() {
                   onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(17, 131, 183, 0.25)')}
                   onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(15, 34, 64, 0.55)')}>
                   <div className={`w-11 h-11 ${form.color} rounded-full flex items-center justify-center flex-shrink-0 shadow-lg`}><FileText className="w-5 h-5 text-white" /></div>
-                  <div className="text-left flex-1 ml-3 min-w-0"><h3 className="text-white text-sm font-bold mb-0.5 truncate">{form.title}</h3><p className="text-[#91ADC5] text-xs leading-tight line-clamp-2">{form.description}</p></div>
+                  <div className="text-left flex-1 ml-3 min-w-0"><h3 className="text-white text-base font-bold mb-0.5 truncate">{form.title}</h3><p className="text-[#91ADC5] text-[15px] leading-tight line-clamp-2">{form.description}</p></div>
                   <ChevronRight className="w-4 h-4 text-white/20 group-hover:text-white/60 flex-shrink-0 ml-2 transition-colors" />
                 </button>
               ))}

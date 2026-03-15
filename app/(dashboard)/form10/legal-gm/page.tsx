@@ -8,8 +8,9 @@ import { ROUTES } from '@/lib/routes';
 import {
   X, LogOut, Home, Lightbulb, Search, Settings, User,
   ArrowLeft, CheckCircle2, FileText, Clock, XCircle,
-  RotateCcw, Send, Paperclip, AlertCircle, Loader2, ChevronDown, Calendar,
+  RotateCcw, Send, Paperclip, AlertCircle, Loader2, ChevronDown,
 } from 'lucide-react';
+import { DatePicker } from '@/components/ui/date-picker';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 type ApprovalStatus = 'PENDING' | 'APPROVED' | 'SENT_BACK' | 'CANCELLED';
@@ -301,11 +302,7 @@ function OfficialUseModal({ submissionNo, initialFields, onSave, onComplete, onC
             </div>
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Letter of Demand Sent Date</label>
-              <div className="relative">
-                <input type="date" value={fields.lodSentDate||''} onChange={e => set('lodSentDate', e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-lg border border-slate-200 bg-slate-50 text-sm focus:outline-none focus:border-[#1A438A] pr-10" />
-                <Calendar className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              </div>
+              <DatePicker value={fields.lodSentDate || ''} onChange={(v) => set('lodSentDate', v)} />
             </div>
             <div>
               <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Letter of Demand (PDF)</label>
@@ -449,7 +446,7 @@ function LegalOfficerForm3PageContent() {
         { id: 0, actor: 'System', role: 'System', action: 'Submission created', timestamp: fmtDate((s as unknown as Record<string, string>).createdAt) },
         ...s.approvals.filter((a: ApproverRecord) => a.actionDate).map((a: ApproverRecord, i: number) => ({
           id: i + 1, actor: a.approverName || a.role, role: ROLE_LABEL[a.role] ?? a.role,
-          action: a.status === 'APPROVED' ? 'Approved' : a.status === 'SENT_BACK' ? 'Sent Back' : 'Cancelled',
+          action: ({'APPROVED':'Approved','OK_TO_PROCEED':'OK to Proceed','SENT_BACK':'Sent Back','CANCELLED':'Cancelled','SUBMIT_TO_LEGAL_GM':'Submitted to Legal GM','SUBMIT_TO_LEGAL_OFFICER':'Submitted to Legal Officer','RETURNED_TO_INITIATOR':'Returned to Initiator','COMPLETED':'Completed'} as Record<string,string>)[a.status as string] ?? a.status,
           comment: a.comment ?? undefined, timestamp: fmtDate(a.actionDate),
         })),
       ];

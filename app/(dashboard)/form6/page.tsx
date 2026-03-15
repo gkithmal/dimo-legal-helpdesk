@@ -257,6 +257,13 @@ function ComboBox({ value, onChange, options, placeholder, disabled = false, dro
   );
 }
 
+function StatusBadge({ status }: { status: string }) {
+  if (status === 'OK')        return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">OK</span>;
+  if (status === 'ATTENTION') return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-700">Attention</span>;
+  if (status === 'RESUBMIT')  return <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-700">Resubmit</span>;
+  return null;
+}
+
 function PanelSection({ title, children, overflowVisible = false }: { title: string; children: React.ReactNode; overflowVisible?: boolean }) {
   return (
     <div className={`bg-white rounded-2xl border border-slate-200/80 shadow-sm ${overflowVisible ? 'overflow-visible' : 'overflow-hidden'}`}>
@@ -295,8 +302,7 @@ function UploadPopup({ docLabel, files, onAdd, onRemove, onClose, onConfirm, can
           </div>
           <button onClick={onClose} className="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 flex items-center justify-center text-white transition-colors"><X className="w-4 h-4" /></button>
         </div>
-        {canRemove && (
-          <div className="p-5">
+        <div className="p-5">
             <div onDrop={onDrop} onDragOver={(e) => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)}
               onClick={() => inputRef.current?.click()}
               className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${dragging ? 'border-[#1A438A] bg-[#EEF3F8] scale-[1.01]' : 'border-slate-200 hover:border-[#4686B7] hover:bg-slate-50'}`}>
@@ -308,7 +314,6 @@ function UploadPopup({ docLabel, files, onAdd, onRemove, onClose, onConfirm, can
               <input ref={inputRef} type="file" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
             </div>
           </div>
-        )}
         {files.length > 0 && (
           <div className="px-5 pb-2">
             <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-2">Attached ({files.length})</p>
@@ -394,6 +399,7 @@ function Form6PageContent() {
   const [uploadPopup, setUploadPopup] = useState<{ docKey: string; docLabel: string; docId: string } | null>(null);
   const [uploadingDoc, setUploadingDoc] = useState<string | null>(null);
   const [docIdMap, setDocIdMap] = useState<Record<string, string>>({});
+  const [docStatuses, setDocStatuses] = useState<Record<string, string>>({});
   const [docFiles, setDocFiles] = useState<Record<string, AttachedFile[]>>({});
   const docFilesRef = useRef<Record<string, AttachedFile[]>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -402,6 +408,7 @@ function Form6PageContent() {
   const [log, setLog] = useState<{ id: number; actor: string; role: string; action: string; timestamp: string }[]>([]);
 
   // ── Form 6 fields ──
+  const [applicantName, setApplicantName] = useState('');
   const [nameOfApplicant, setNameOfApplicant] = useState('');
   const [sapCostCenter, setSapCostCenter] = useState('');
   const [trademarkClass, setTrademarkClass] = useState('');
@@ -435,12 +442,14 @@ function Form6PageContent() {
     }).catch(() => {});
   }, []);
 
+  const [formConfigDocs, setFormConfigDocs] = useState<{ id: string; label: string; type: string; isRequired: boolean }[]>([]);
   // Load form config
   useEffect(() => {
     fetch('/api/settings/forms').then(r => r.json()).then(data => {
       if (data.success) {
         const config = data.data.find((c: any) => c.formId === 6);
         if (config?.instructions) setInstructionsText(config.instructions);
+        if (config?.docs?.length) setFormConfigDocs(config.docs);
       }
     }).catch(() => {});
   }, []);
@@ -459,6 +468,7 @@ function Form6PageContent() {
       setNameOfApplicant(s.companyCode ?? '');
       try {
         const scope = JSON.parse(s.scopeOfAgreement || '{}');
+        setApplicantName(scope.applicantName ?? '');
         setTrademarkClass(scope.trademarkClass ?? '');
         setArtworkOrWord(scope.artworkOrWord ?? '');
         setRemarks(scope.remarks ?? '');
@@ -473,12 +483,15 @@ function Form6PageContent() {
       if (s.documents?.length) {
         const loaded: Record<string, AttachedFile[]> = {};
         const idMap: Record<string, string> = {};
+        const statuses: Record<string, string> = {};
         s.documents.forEach((doc: any) => {
           idMap[doc.label] = doc.id;
+          statuses[doc.label] = doc.status || 'NONE';
           if (doc.fileUrl) loaded[doc.label] = [{ id: doc.id, name: doc.label, size: 0, file: { name: doc.label, size: 0 } as File, fileUrl: doc.fileUrl }];
         });
         setDocFiles(loaded);
         setDocIdMap(idMap);
+        setDocStatuses(statuses);
       }
       if (s.comments?.length) {
         setComments(s.comments.map((c: any, i: number) => ({
@@ -489,13 +502,17 @@ function Form6PageContent() {
     }).catch(() => {});
   }, [mode, submissionId]);
 
-  // Required docs — always Artwork
-  const requiredDocs = BASE_DOCS.map(d => ({ label: d, key: d }));
+  // Required docs — from settings if configured, else fall back to BASE_DOCS
+  const requiredDocs: { label: string; key: string; isRequired: boolean }[] =
+    formConfigDocs.length > 0
+      ? formConfigDocs.map(d => ({ id: d.id, label: d.label, key: d.label, isRequired: d.isRequired }))
+      : BASE_DOCS.map(d => ({ label: d, key: d, isRequired: true }));
 
   // ── Validation ──
   const validate = (): string[] => {
     const errors: string[] = [];
-    if (!nameOfApplicant.trim()) errors.push('Name of the Applicant is required');
+    if (!applicantName.trim())   errors.push('Name of the Applicant is required');
+    if (!nameOfApplicant)        errors.push('SAP Company codes is required');
     if (!sapCostCenter)          errors.push('SAP Cost Center is required');
     if (!trademarkClass)         errors.push('Trademark & Classes is required');
     if (!artworkOrWord.trim())   errors.push('Artwork or word is required');
@@ -522,11 +539,19 @@ function Form6PageContent() {
     if (submissionStatus === 'PENDING_SPECIAL_APPROVER') return 3;
     if (submissionStatus === 'PENDING_LEGAL_GM_FINAL') return 4;
     if (submissionStatus === 'PENDING_LEGAL_OFFICER' && (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION')) return 5;
-    if (submissionStatus === 'COMPLETED' || submissionStatus === 'CANCELLED') return 5;
+    if (submissionStatus === 'COMPLETED') return 5;
+    if (submissionStatus === 'CANCELLED') {
+      if (loStage === 'POST_GM_APPROVAL' || loStage === 'FINALIZATION') return 5;
+      if (loStage === 'REVIEW_FOR_GM' || loStage === 'SUBMIT_TO_LEGAL_GM') return 4;
+      if (loStage === 'INITIAL_REVIEW' || loStage === 'ACTIVE' || loStage === 'ASSIGN_COURT_OFFICER') return 3;
+      const lgmStage = (submissionData as any)?.legalGmStage || '';
+      if (lgmStage) return 2;
+      return 1;
+    }
     return 1;
   })();
 
-  const scopePayload = () => JSON.stringify({ trademarkClass, artworkOrWord, remarks });
+  const scopePayload = () => JSON.stringify({ applicantName, trademarkClass, artworkOrWord, remarks });
 
   // ── Submit ──
   const handleSubmitClick = async (asDraft = false) => {
@@ -594,6 +619,18 @@ function Form6PageContent() {
           }
         }
         await Promise.all(ups);
+
+        // Re-link already-uploaded files (fileUrl set) to new submission doc IDs
+        for (const [docKey, files] of Object.entries(docFilesRef.current)) {
+          for (const f of files as AttachedFile[]) {
+            if (f.fileUrl) {
+              const docId = docLabelToId[docKey] || '';
+              if (docId) {
+                await fetch(`/api/submissions/${data.data.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ documentId: docId, fileUrl: f.fileUrl, documentStatus: 'UPLOADED' }) });
+              }
+            }
+          }
+        }
       }
       if (asDraft) { router.push(ROUTES.HOME); }
       else if (mode === 'resubmit') { router.push(ROUTES.HOME); }
@@ -684,18 +721,31 @@ function Form6PageContent() {
                 </div>
               </div>
 
-              {/* Name of the Applicant (Company Code) */}
+              {/* Name of the Applicant — free text */}
               <div>
                 <FieldLabel required>Name of the Applicant</FieldLabel>
+                <TextField
+                  value={applicantName}
+                  onChange={setApplicantName}
+                  placeholder="Enter applicant name..."
+                  disabled={isReadOnly}
+                  hasError={hasError('applicant')}
+                />
+                <FieldError message={hasError('applicant') ? 'Name of the Applicant is required' : undefined} />
+              </div>
+
+              {/* SAP Company codes */}
+              <div>
+                <FieldLabel required>SAP Company codes</FieldLabel>
                 <SelectField
                   value={nameOfApplicant}
                   onChange={setNameOfApplicant}
                   options={COMPANY_CODES}
                   placeholder="Select company..."
                   disabled={isReadOnly}
-                  hasError={hasError('applicant')}
+                  hasError={hasError('company')}
                 />
-                <FieldError message={hasError('applicant') ? 'Name of the Applicant is required' : undefined} />
+                <FieldError message={hasError('company') ? 'SAP Company codes is required' : undefined} />
               </div>
 
               {/* SAP Cost Center */}
@@ -719,7 +769,7 @@ function Form6PageContent() {
                   value={trademarkClass}
                   onChange={setTrademarkClass}
                   options={TRADEMARK_CLASSES}
-                  placeholder="Search NICE Classification..."
+                  placeholder="Search Trademark &amp; Classes..."
                   disabled={isReadOnly}
                   hasError={hasError('trademark')}
                 />
@@ -800,14 +850,19 @@ function Form6PageContent() {
               {requiredDocs.map((doc, i) => {
                 const files = docFiles[doc.key] || [];
                 const hasFiles = files.length > 0;
+                const docStatus = docStatuses[doc.key] || 'NONE';
                 return (
                   <div key={doc.key} className={`flex items-center justify-between rounded-lg px-3 py-2 border transition-all
-                    ${hasFiles ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
+                    ${docStatus === 'ATTENTION' ? 'bg-yellow-50 border-yellow-200' :
+                      docStatus === 'RESUBMIT'  ? 'bg-red-50 border-red-200' :
+                      hasFiles ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}>
                     <div className="flex-1 mr-2 min-w-0">
-                      <span className="text-[11px] text-slate-600 leading-tight block">
+                      <span className="text-[11px] text-slate-600 leading-tight flex items-center gap-1 flex-wrap">
                         <span className="font-bold text-slate-300 mr-1">{i + 1}.</span>{doc.label}
+                        {!doc.isRequired && <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-slate-100 text-slate-400">Optional</span>}
                       </span>
                       {hasFiles && <span className="text-[10px] text-emerald-600 font-semibold">{files.length} file{files.length > 1 ? 's' : ''} attached</span>}
+                      {docStatus !== 'NONE' && <StatusBadge status={docStatus} />}
                     </div>
                     {uploadingDoc === doc.key ? (
                       <Loader2 className="w-4 h-4 text-[#1A438A] animate-spin flex-shrink-0" />

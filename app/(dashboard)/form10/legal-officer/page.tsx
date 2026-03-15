@@ -255,11 +255,6 @@ function CourtOfficerPageContent() {
   const currentUserName = session?.user?.name ?? '';
   const router = useRouter();
   const searchParams = useSearchParams();
-  if (status === 'loading') return null;
-  if (status === 'authenticated' && !['COURT_OFFICER'].includes(session?.user?.role as string)) {
-    router.replace('/');
-    return null;
-  }
   const submissionId = searchParams.get('id');
   const [showSignOut, setShowSignOut] = useState(false);
 
@@ -313,6 +308,12 @@ function CourtOfficerPageContent() {
   }, [submissionId]);
 
   useEffect(() => { loadSubmission(); }, [loadSubmission]);
+
+  if (status === 'loading') return null;
+  if (status === 'authenticated' && !['COURT_OFFICER'].includes(session?.user?.role as string)) {
+    router.replace('/');
+    return null;
+  }
 
   const callApproveAPI = async (action: string, extra?: Record<string, string>) => {
     if (!submissionId || !submission) return;

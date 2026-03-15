@@ -3,6 +3,17 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import { z } from 'zod';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
+
+const ApproveSchema = z.object({
+  role:   z.string().min(1),
+  action: z.enum(['APPROVED', 'SENT_BACK', 'CANCELLED', 'ASSIGN_COURT_OFFICER', 'SUBMIT_TO_LEGAL_GM',
+                  'SUBMIT_TO_LEGAL_OFFICER', 'ASSIGN_SPECIAL_APPROVER', 'RETURNED_TO_INITIATOR', 'COMPLETED',
+                  'F9_SUBMIT_TITLE_TO_GM', 'F9_SUBMIT_TO_FM', 'F9_SUBMIT_FINAL_TO_GM',
+                  'F9_JOB_COMPLETE', 'F9_SAVE_OFFICIAL', 'F9_REQUEST_MORE_DOCS',
+                  'PROCEED', 'SUBMITTED', 'ACKNOWLEDGED']),
+}).catchall(z.any());
 
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -10,12 +21,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
     const session = await getServerSession(authOptions);
     if (!session) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
-    const body = await req.json();
+    const { limited, retryAfter } = checkRateLimit(getClientIp(req), 'approve', { max: 60, windowMs: 60_000 });
+    if (limited) return NextResponse.json({ success: false, error: 'Too many requests' }, { status: 429, headers: { 'Retry-After': String(retryAfter) } });
+    const raw = await req.json();
+    const parsed = ApproveSchema.safeParse(raw);
+    if (!parsed.success) return NextResponse.json({ success: false, error: 'Invalid request', details: parsed.error.issues }, { status: 400 });
+    const body = parsed.data;
     const {
       role, action, comment,
       approverName, approverEmail,
       assignedOfficer,
-      courtOfficerId, courtOfficerEmail, courtOfficerName,
+      courtOfficerId,
       specialApproverEmail, specialApproverName,
     } = body;
     const id = (await params).id;
@@ -210,12 +226,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
               });
             }
           } else if (isForm3) {
-            // Form 3: after final GM approval → Court Officer does final confirmation
+            // Form 3: after final GM approval → Legal Officer finalizes directly
             await prisma.submission.update({
               where: { id },
               data: {
-                status: 'PENDING_COURT_OFFICER',
-                loStage: 'POST_GM_APPROVAL',
+                status: 'PENDING_LEGAL_OFFICER',
+                loStage: 'FINALIZATION',
                 updatedAt: new Date(),
               },
             });
@@ -675,6 +691,55 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           data: { status: 'COMPLETED', updatedAt: new Date() },
         });
       }
+    }
+
+    // ── Legal GM audit record ──────────────────────────────────────────────────
+    if (role === 'LEGAL_GM' && ['APPROVED', 'SENT_BACK', 'CANCELLED'].includes(action)) {
+      // Distinguish initial "OK to Proceed" from final "Approved"
+      const wasFinal = submission.legalGmStage === 'FINAL_APPROVAL' || submission.status === 'PENDING_LEGAL_GM_FINAL';
+      const lgmAuditStatus = action === 'APPROVED' && !wasFinal ? 'OK_TO_PROCEED' : action;
+      await prisma.submissionApproval.create({
+        data: {
+          submissionId: id,
+          role: 'LEGAL_GM',
+          approverName: approverName || (session?.user?.name ?? 'Legal GM'),
+          approverEmail: approverEmail || (session?.user?.email ?? ''),
+          status: lgmAuditStatus,
+          comment: comment || null,
+          actionDate: new Date(),
+        },
+      });
+    }
+
+    // ── Court Officer audit record ─────────────────────────────────────────────
+    if (role === 'COURT_OFFICER' && ['SUBMIT_TO_LEGAL_OFFICER', 'SENT_BACK', 'CANCELLED'].includes(action)) {
+      await prisma.submissionApproval.create({
+        data: {
+          submissionId: id,
+          role: 'COURT_OFFICER',
+          approverName: approverName || (session?.user?.name ?? 'Court Officer'),
+          approverEmail: approverEmail || (session?.user?.email ?? ''),
+          status: action,
+          comment: comment || null,
+          actionDate: new Date(),
+        },
+      });
+    }
+
+    // ── Legal Officer audit record ─────────────────────────────────────────────
+    if (role === 'LEGAL_OFFICER' && submission.formId !== 9 &&
+        ['SUBMIT_TO_LEGAL_GM', 'RETURNED_TO_INITIATOR', 'COMPLETED', 'ASSIGN_SPECIAL_APPROVER', 'ASSIGN_COURT_OFFICER'].includes(action)) {
+      await prisma.submissionApproval.create({
+        data: {
+          submissionId: id,
+          role: 'LEGAL_OFFICER',
+          approverName: approverName || (session?.user?.name ?? 'Legal Officer'),
+          approverEmail: approverEmail || (session?.user?.email ?? ''),
+          status: action,
+          comment: comment || null,
+          actionDate: new Date(),
+        },
+      });
     }
 
     const updated = await prisma.submission.findUnique({
